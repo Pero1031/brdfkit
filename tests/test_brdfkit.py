@@ -19,8 +19,9 @@ from brdfkit.export import hpbpca                              # noqa: E402
 from brdfkit.analysis import lu_chipman as LC                  # noqa: E402
 from brdfkit.analysis import merl_pca as MP                    # noqa: E402
 
-DATA_HPBRDF = os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf')
-DATA_MERL_DIR = r'D:\Jack_spallow\MERL_BRDF_database\brdfs'
+# real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
+DATA_HPBRDF = os.environ.get('BRDFKIT_HPBRDF', os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf'))
+DATA_MERL_DIR = os.environ.get('BRDFKIT_MERL_DIR', os.path.join(ROOT, 'data', 'merl'))
 DATA_MERL = os.path.join(DATA_MERL_DIR, 'aluminium.binary')
 
 

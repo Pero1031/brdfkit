@@ -6,8 +6,8 @@ and the output is the common basis, the distribution of the materials in it, and
 is held out of the fit (leave-one-out). Implementation in `brdfkit/analysis/merl_pca.py`.
 
 ```bash
-python -m brdfkit merl-pca D:\Jack_spallow\MERL_BRDF_database\brdfs --out out/merl_analysis/log
-python -m brdfkit merl-pca D:\Jack_spallow\MERL_BRDF_database\brdfs --out out/merl_analysis/nielsen --mapping nielsen
+python -m brdfkit merl-pca data/merl --out out/merl_analysis/log
+python -m brdfkit merl-pca data/merl --out out/merl_analysis/nielsen --mapping nielsen
 ```
 
 | Option | Meaning | Default |

@@ -22,6 +22,9 @@ dist/
 *.pdb
 *.ilk
 
+# local hand-over notes
+/HANDOFF.md
+
 # editors / OS
 .vs/
 .vscode/

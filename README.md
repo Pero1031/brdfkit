@@ -1,5 +1,7 @@
 # brdfkit
 
+[![tests](https://github.com/Pero1031/brdfkit/actions/workflows/tests.yml/badge.svg)](https://github.com/Pero1031/brdfkit/actions/workflows/tests.yml)
+
 Tools for measured BRDF tables (MERL, KAIST pBRDF 2020, hpBRDF 2025): loading, PCA compression for renderers,
 and decomposition of the polarimetric data into physical quantities.
 Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LICENSES.md)).
@@ -26,8 +28,12 @@ python -m brdfkit compress data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pc
 python -m brdfkit eval     data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pca.npz --sweep
 python -m brdfkit export   out/pca/Aluminum_pca.npz out/pca/Aluminum.hpbpca
 python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml --out out/analysis
-python -m brdfkit merl-pca   D:\Jack_spallow\MERL_BRDF_database\brdfs --out out/merl_analysis/log
+python -m brdfkit merl-pca   data/merl --out out/merl_analysis/log
 ```
+
+Datasets are not included (see [LICENSES.md](LICENSES.md)). The examples and the optional real-data tests expect
+`data/kaist/hpbrdf/Aluminum.hpbrdf` and the MERL `.binary` files in `data/merl/`; a symlink or junction into wherever
+the datasets live works, or set `BRDFKIT_HPBRDF` / `BRDFKIT_MERL_DIR` for the tests.
 
 From Python:
 

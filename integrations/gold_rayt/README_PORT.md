@@ -14,7 +14,7 @@ itself has not been done here yet. The steps are in [PATCH_NOTES.md](PATCH_NOTES
 | `include/Materials/hpbrdf_pca.hpp` | dependency-free decoder (`namespace hpbrdf`): file reading, Rusinkiewicz coordinates, latent-vector interpolation, decoding |
 | `out/pca/Aluminum.hpbpca` (repository-level out/, not tracked) | compressed aluminium (231 MB, latent 8+32 dimensions, float16). Made with `python -m brdfkit export` |
 | `scenes/hpbrdf_aluminum.json` | example scene: the measured aluminium sphere next to a Johnson & Christy gold sphere |
-| `test/` | a translation unit and batch file that only check that it compiles against GoLD_rayt's headers |
+| `test/` | a translation unit and batch file that only check that it compiles against GoLD_rayt's headers (`set GOLD_RAYT=<GoLD_rayt source root>` before running `build_check.bat`) |
 
 ## Mapping GoLD_rayt's conventions
 
