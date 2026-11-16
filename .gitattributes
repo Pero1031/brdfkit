@@ -1,0 +1,6 @@
+# keep LF in the repository; Windows checkouts may still see CRLF warnings from core.autocrlf
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.npz binary
+*.hpbpca binary

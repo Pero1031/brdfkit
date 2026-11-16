@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brdfkit"
+version = "0.1.0"
+description = "Loaders, PCA compression and polarimetric analysis for measured BRDF tables (MERL, KAIST pBRDF, hpBRDF)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "So Kohinata" }]
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+
+[project.scripts]
+brdfkit = "brdfkit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["brdfkit*"]

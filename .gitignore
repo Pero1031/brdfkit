@@ -1,0 +1,30 @@
+# datasets and everything derived from them (see LICENSES.md)
+/data/
+/out/
+*.hpbrdf
+*.pbsdf
+*.hpbpca
+*.binary
+*.mat
+*.npz
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+
+# C++ build products
+*.obj
+*.exe
+*.pdb
+*.ilk
+
+# editors / OS
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
