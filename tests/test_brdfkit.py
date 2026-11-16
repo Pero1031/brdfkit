@@ -20,6 +20,7 @@ from brdfkit.analysis import lu_chipman as LC                  # noqa: E402
 from brdfkit.analysis import merl_pca as MP                    # noqa: E402
 from brdfkit.analysis import merl_project as MJ                # noqa: E402
 from brdfkit import color                                      # noqa: E402
+from brdfkit.analysis import merl_subsets as MS                # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
 DATA_HPBRDF = os.environ.get('BRDFKIT_HPBRDF', os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf'))
@@ -343,3 +344,20 @@ def test_merl_project_real():
     pos = rgb[fin][(rgb[fin] > 1e-3).all(-1)]
     peak = pos[pos.mean(-1) > np.percentile(pos.mean(-1), 95)]                          # the specular region of aluminium is nearly grey
     assert np.abs(np.median(np.log(peak[:, 0] / peak[:, 2]))) < 0.3
+
+
+def test_subset_residuals():
+    """residuals() of a table that lives in the basis: tiny at the true rank, decreasing in k, measured on the common mask only"""
+    mats, A = synthetic_material_set(n_mat=14)
+    model, _ = MP.fit(mats[:10], stride=1, mapping='log', k=8, log=lambda *a: None)
+    hp = mats[12][1].values.copy()                                                  # a material the basis has not seen
+    common = model.valid & np.isfinite(hp).all(-1)
+    ln, lin, zmax, zc = MS.residuals(model, hp, common, [1, 2, 3, 5])
+    assert np.all(np.diff(ln) <= 1e-6) and ln[2] < 0.1 and lin[2] < 0.1 and ln[0] > 3 * ln[2], (ln, lin)
+    assert np.isfinite(zmax) and 1 <= zc <= 5
+    # unmeasured bins in the table are skipped, not propagated
+    hp[3, 2:5, 2:5] = np.nan
+    ln2 = MS.residuals(model, hp, model.valid & np.isfinite(hp).all(-1), [3])[0]
+    assert np.isfinite(ln2).all() and abs(ln2[0] - ln[2]) < 0.05
+    for name in MS.METALS + MS.FINISHES:
+        assert isinstance(name, str)

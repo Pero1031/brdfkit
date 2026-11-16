@@ -90,11 +90,48 @@ noise of MERL itself; the φ_d-small bias is a property of this table (cause not
 nearest materials of the log model are unchanged (the MERL aluminium moves from 18th to 16th), and the residual at k = 16 rises from 0.32 to 0.42 (log) and from 0.28 to 0.36 (nielsen):
 the averaging removes noise that the basis cannot represent anyway, and does not move the material.
 
+## Is a metal-only basis better? (`brdfkit merl-subsets`)
+
+The projection above leaves two explanations: the 100-material basis lacks the variety of metal specular shapes, or the table is unlike any MERL
+metal. `brdfkit/analysis/merl_subsets.py` refits the PCA on subsets of the MERL materials (log mapping, stride 2) and projects the table on each. The subsets are
+11 bare metals and steels (aluminium, alum-bronze, brass, chrome, chrome-steel, nickel, ss440, steel, tungsten-carbide, black-oxidized-steel,
+grease-covered-steel), those plus 12 metallic paints and two-layer coatings (23), each with and without the MERL aluminium, and, as the control,
+30 random subsets of each size drawn from the other materials. Every residual is measured on the same bins (measured in all 100 materials and in the table).
+
+```bash
+python -m brdfkit merl-subsets out/hpbrdf_on_merl/Aluminum_merl_grid_full.npz data/merl --out out/subsets     --all-model out/merl_analysis/log/merl_pca.npz --random 30 [--ablate]
+```
+
+ln RMSE of the log BRDF (relative RMSE of f cos θi cos θo in the last column):
+
+| basis | n | k = 5 | k = 8 | k = 9 | largest k (value / linear) |
+|---|---|---|---|---|---|
+| all materials | 100 | 0.96 | 0.42 | 0.41 | 16: 0.32 / 0.25 |
+| metals | 11 | 1.03 | 0.94 | 0.91 | 9: 0.91 / 1.01 |
+| metals, no aluminium | 10 | 1.25 | 1.15 | | 8: 1.15 / 0.78 |
+| random 11, mean ± std (best of 30) | 11 | 1.01 ± 0.15 | 0.78 ± 0.15 (0.53) | 0.75 ± 0.15 (0.52) | 9: 0.75 / 0.83 |
+| metals + finishes | 23 | 1.01 | 0.67 | 0.64 | 16: 0.55 / 0.33 |
+| metals + finishes, no aluminium | 22 | 1.04 | 0.73 | 0.70 | 16: 0.60 / 0.37 |
+| random 23, mean ± std (best of 30) | 23 | 0.99 ± 0.10 | 0.69 ± 0.12 (0.45) | 0.64 ± 0.11 (0.43) | 16: 0.48 ± 0.06 (0.35) / 0.55 |
+
+- **A metal-only basis does not help.** At k = 9 the 11 metals leave 0.91, against 0.75 ± 0.15 for random 11-material subsets and 0.41 for all 100 materials.
+  The 23-material set leaves 0.55 at k = 16, again above its random control (0.48 ± 0.06, 1.3 standard deviations). The explanation "the basis lacks metals" is not supported as stated.
+- **Variety, not metalness, lowers the residual.** The residual falls with the number of materials, and the metals are held out better by the full basis too:
+  their median leave-one-out error at k = 9 is 0.38 under the 100-material basis and 0.50 under the metal-only basis.
+- **The MERL aluminium helps, but only a little.** Removing it from the metal basis raises the residual (0.94 → 1.15 at k = 8), yet the table stays far from the best random subsets (0.53).
+- **The drop at k = 7 exists only in the full basis.** The residual falls from 0.94 to 0.42 there; none of the metal sets, and neither mean curve of the random subsets (0.93 → 0.83 and 0.92 → 0.81 from k = 6 to 7), shows a drop of that size.
+  The component that carries the specular core is therefore not a property of the metals as a class.
+- **No single material carries it.** Refitting the 100-material basis 99 times, each time without one material (`--ablate`), moves the k = 16 residual by at most +0.024
+  (median change 0.000, std 0.005; the full basis gives 0.324). The largest increases are nickel (+0.024), tungsten-carbide (+0.013), aluminium (+0.012), brass (+0.010)
+  and grease-covered-steel (+0.008), so metals are 5 of the top 6, but each effect is within a few percent of the residual. The core component comes from the
+  combined variety of the set, which is why neither 11 metals nor 23 materials reproduce it, and why dropping one material does not remove it.
+
 ## Caveats
 
 - MERL's RGB is a camera-calibrated colour (channel scales 1 : 1.15 : 1.66); the hpBRDF RGB here is sRGB with an equal-energy white. Hue components (PC4 and above) therefore
   compare two different colour conventions; the aluminium is nearly grey in the specular region, but the off-peak bins are bluish (median R/B ≈ 0.56 over the φ_d = 90° slice; cause not checked).
 - One hpBRDF material only; the other 12 have not been projected. A single point does not say how well the MERL basis generalizes to measured
   hpBRDF metals in general.
-- The MERL basis comes from 100 materials of which about a dozen are metals; the metal subset PCA (next item of the roadmap) is the natural follow-up.
+- The subset study uses 11 and 23 materials, so at most 9 and 21 components; the comparison with random subsets of the same size is what makes it fair, but a basis
+  of a few dozen materials is small whatever it is made of. Only the log mapping was studied.
 - Distances are in feature-norm units of the log (or nielsen) mapping on the common mask; they are comparable between materials of one model, not between models.
