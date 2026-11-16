@@ -1,80 +1,84 @@
-# Lu–Chipman 分解による実測アルミ（hpBRDF）の偏光分析
+# Polarimetric analysis of measured aluminium (hpBRDF) by Lu–Chipman decomposition
 
-`python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml data/kaist/refidx/Al_McPeak.yml --out out/analysis --raw data/kaist/hpbrdf/Aluminum.hpbrdf` の結果。実装は `brdfkit/analysis/lu_chipman.py`、出力は `out/analysis/`（図 3 枚、`lu_chipman_specular.npz`、`lu_chipman_report.txt`）。
+Results of `python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml data/kaist/refidx/Al_McPeak.yml --out out/analysis --raw data/kaist/hpbrdf/Aluminum.hpbrdf`.
+Implementation in `brdfkit/analysis/lu_chipman.py`; output in `out/analysis/` (3 figures, `lu_chipman_specular.npz`, `lu_chipman_report.txt`).
 
-## 方法
+## Method
 
-ミュラー行列を M = M_Δ · M_R · M_D（偏光解消 × 位相差 × 二色性）に分解し（Lu & Chipman 1996）、
+The Mueller matrix is factored as M = M_Δ · M_R · M_D (depolarizer × retarder × diattenuator; Lu & Chipman 1996), giving
 
-- 二色性 D（0〜1）: s 偏光と p 偏光の反射率の差。(|r_s|² − |r_p|²)/(|r_s|² + |r_p|²)
-- 位相差 R（0〜180°）: s と p の位相のずれ。理想の反射は法線入射で 180°、主入射角で 90°、掠め角で 0°
-- 偏光解消 Δ（0〜1）: 偏光が失われる割合。理想の Fresnel 面では 0
-- 併せて Gil–Bernabeu の偏光解消指数 DI（1 = 偏光を保つ）
+- diattenuation D (0–1): the difference between the s and p reflectances, (|r_s|² − |r_p|²)/(|r_s|² + |r_p|²)
+- retardance R (0–180°): the phase shift between s and p. An ideal reflection has 180° at normal incidence, 90° at the principal angle, 0° at grazing
+- depolarization Δ (0–1): the fraction of polarization lost. 0 for an ideal Fresnel surface
+- and the Gil–Bernabeu depolarization index DI (1 = polarization preserved)
 
-を、PCA 圧縮した表から復号したミュラー行列（GoLD_rayt と同じ (s, p) 基底に回したもの）に適用した。
-比較対象は、Al の複素屈折率（Rakić 1995、McPeak 2015）からの Fresnel 理論値と、
-Al の上に屈折率 1.65 の誘電体膜（自然酸化膜 Al₂O₃ を想定）を 1 層置いた薄膜モデル。膜厚は D(θ) と R(θ) への当てはめで決めた。
+applied to the Mueller matrices decoded from the PCA-compressed table (rotated into the same (s, p) bases as GoLD_rayt).
+The references are the Fresnel values from the complex refractive index of Al (Rakić 1995, McPeak 2015) and a thin-film
+model with one dielectric layer of index 1.65 on Al (the native oxide Al₂O₃); the film thickness is fitted to D(θ) and R(θ).
 
-検証: 理論の Fresnel 行列で Δ = 0、D と R が解析値と一致すること、既知のパラメータで合成した 50 個の行列が復元されることを確認済み。
-元の 13 GB テーブル（θ_h = 0 のスライス）から直接分解した値と、復号値から分解した値は D で 0.02、R で 1°、Δ で 0.01 以内で一致した。
+Validation: the theoretical Fresnel matrices give Δ = 0 and D, R equal to the analytic values, and 50 matrices synthesized
+from known parameters are recovered. Decomposing the original 13 GB table directly (the θ_h = 0 slice) and decomposing the
+decoded values agree within 0.02 in D, 1° in R and 0.01 in Δ.
 
-## 結果 1: 位相差 R は「Al + 約 20 nm の誘電体膜」で説明できる
+## Result 1: the retardance R is explained by "Al + about 20 nm of dielectric film"
 
-鏡面配置（θ_i = θ_o）での主入射角（R が 90° を横切る角度）:
+Principal angle (where R crosses 90°) in the specular configuration (θ_i = θ_o):
 
-| 波長 | 実測 | 裸の Al（Rakić） | 裸の Al（McPeak） | Al + 20.2 nm 膜 |
+| Wavelength | Measured | Bare Al (Rakić) | Bare Al (McPeak) | Al + 20.2 nm film |
 |---|---|---|---|---|
 | 446 nm | 72.2° | 79.9° | 78.5° | 71.1° |
 | 550 nm | 73.6° | 81.6° | 80.6° | 74.2° |
 | 646 nm | 72.5° | 82.8° | 81.9° | 76.2° |
 | 798 nm | 77.1° | 83.5° | 82.8° | 78.2° |
 
-裸の Al では実測より 8〜10° 大きい角度でしか説明できず、膜を 1 層置くと 1〜4° 以内に入る。
-R(θ) の曲線全体も、薄膜モデルの破線が実測の実線にほぼ重なる（`lu_chipman_specular.png` 中央）。
-波長ごとに膜厚を当てはめると 14.5 nm（414 nm）から 29 nm（950 nm）へ単調に増えるので、
-「屈折率 1.65 で一定の 1 層」という仮定は粗く、実際は膜の分散か粗さの寄与があるが、
-**位相差に関しては実測アルミは「酸化膜つきの Al」として振る舞う**と言える。
-R は波長方向にも角度方向にも滑らかで、この分析で最も信頼できる量である。
+Bare Al puts the principal angle 8–10° higher than measured; one film layer brings it within 1–4°.
+The whole R(θ) curve follows: the dashed thin-film model nearly overlaps the solid measured curve (`lu_chipman_specular.png`, middle).
+Fitting the thickness per wavelength gives a monotonic increase from 14.5 nm (414 nm) to 29 nm (950 nm), so the assumption
+"one layer with a constant index of 1.65" is crude and the film's dispersion or roughness also contributes; still,
+**as far as the retardance is concerned, the measured aluminium behaves like Al with an oxide film**.
+R is smooth along both wavelength and angle and is the most reliable quantity in this analysis.
 
-## 結果 2: 二色性 D は Fresnel でも薄膜でも説明できない
+## Result 2: the diattenuation D is explained by neither Fresnel nor the film
 
-| θ | 550 nm 実測 D | 裸の Al | 膜 20 nm | 800 nm 実測 D | 裸の Al |
+| θ | measured D, 550 nm | bare Al | 20 nm film | measured D, 800 nm | bare Al |
 |---|---|---|---|---|---|
 | 10° | 0.099 | 0.001 | 0.001 | 0.193 | 0.002 |
 | 45° | 0.187 | 0.031 | 0.031 | 0.252 | 0.050 |
 | 70° | 0.321 | 0.099 | 0.073 | 0.432 | 0.167 |
 
-実測の D は理論の 3〜10 倍で、法線入射付近でも 0.1〜0.2 ある。
-等方的な面では法線入射で s と p の区別がないので D = 0 でなければならず、この残差は材料の物理ではなく、
+The measured D is 3–10 times the theory and stays at 0.1–0.2 even near normal incidence.
+On an isotropic surface s and p are indistinguishable at normal incidence, so D must be 0 there; the residual is not material
+physics but indicates either
 
-- 試料が等方ではない（圧延・ヘアライン仕上げのアルミなら、溝の向きで反射率が変わり、法線入射でも二色性が出る）、または
-- 偏光計の系統誤差（データセットの等方仮定で平均化されたもの）
+- an anisotropic sample (rolled or brushed aluminium reflects differently along and across the grooves, giving diattenuation even at normal incidence), or
+- a systematic error of the polarimeter (averaged out by the dataset's isotropy assumption).
 
-のどちらかを示す。D は波長方向のノイズも大きい（`lu_chipman_spectral.png` 左）。
-薄膜は D をほとんど変えない（膜ありの破線は裸の点線とほぼ同じ）ので、**膜厚の情報は R だけから来ている**。
+D is also noisy along wavelength (`lu_chipman_spectral.png`, left).
+The film barely changes D (the dashed film curve is almost identical to the dotted bare one), so **the thickness information comes from R alone**.
 
-## 結果 3: 偏光解消 Δ は小さく、鏡面から離れると増える
+## Result 3: the depolarization Δ is small and grows away from the specular ridge
 
-- 鏡面配置では Δ = 0.00〜0.17、DI = 0.83〜1.00。粗さの小さい金属として妥当な範囲。
-- 角度が大きいほど Δ が増える（550 nm: 10° で 0.05、70° で 0.17）。
-- 鏡面の尾根から外れると Δ は 0.25〜0.5 まで上がり、光源が法線近く・視点が掠め角の領域では 0.7 を超える
-  （`lu_chipman_map550.png` 右）。多重散乱と裾の成分が偏光を消している。
-- 800 nm 付近で Δ が負（−0.04）、DI が 1 を超える。これは行列が物理的に許される範囲をわずかに超えている
-  （|m_ij| の二乗和 > 3 m00²）ことを意味し、測定ノイズと圧縮誤差の合算と考えられる。
-  物理制約を入れた圧縮（受動性の射影）を加える根拠になる。
+- In the specular configuration Δ = 0.00–0.17, DI = 0.83–1.00: a reasonable range for a metal of low roughness.
+- Δ grows with angle (550 nm: 0.05 at 10°, 0.17 at 70°).
+- Off the specular ridge Δ rises to 0.25–0.5 and exceeds 0.7 where the light is near the normal and the viewer near grazing
+  (`lu_chipman_map550.png`, right): multiple scattering and the tail component destroy polarization.
+- Around 800 nm Δ goes negative (−0.04) and DI exceeds 1. The matrix slightly leaves the physically admissible range
+  (sum of squares of |m_ij| > 3 m00²), presumably from measurement noise plus compression error.
+  This argues for a physically constrained compression (projection onto passive matrices).
 
-## 補足: テーブルの対称性
+## Note: symmetry of the table
 
-θ_h = 0 では等方性からミュラー行列は φ_d に依存しないはずだが、φ_d = 0 と φ_d = π のスライスは
-20° で最大 11%、60° で 1% 違う。また鏡面から外れた領域で R が θ_i と θ_o について非対称に分布する。
-表が厳密には等方・相反でないことの別の現れで、レンダリングには影響しないが、分析では平均化して使うべき。
+At θ_h = 0, isotropy means the Mueller matrix should not depend on φ_d, yet the φ_d = 0 and φ_d = π slices differ by up to
+11% at 20° and 1% at 60°. Off the specular ridge, R is also asymmetric in θ_i and θ_o. Both show that the table is not
+strictly isotropic or reciprocal; harmless for rendering, but analyses should average over them.
 
-## まとめ
+## Summary
 
-| 量 | 実測 vs 理想 Al | 解釈 |
+| Quantity | Measured vs ideal Al | Interpretation |
 |---|---|---|
-| 位相差 R | 主入射角が 8〜10° 小さい | 約 15〜25 nm の誘電体（酸化）膜で説明できる |
-| 二色性 D | 3〜10 倍大きく、法線入射で 0 にならない | 試料の異方性か測定の系統誤差。材料の物理では説明できない |
-| 偏光解消 Δ | 鏡面で 0〜0.17、裾で 0.5 以上 | 粗さによる多重散乱。理想 Fresnel では 0 |
+| Retardance R | principal angle 8–10° lower | explained by a 15–25 nm dielectric (oxide) film |
+| Diattenuation D | 3–10× larger, non-zero at normal incidence | sample anisotropy or a measurement systematic; not material physics |
+| Depolarization Δ | 0–0.17 on the ridge, above 0.5 in the tails | multiple scattering from roughness; 0 for ideal Fresnel |
 
-PCA の 32 成分では言えなかった「どこが理想からずれているか」が、R は膜、D は異方性かノイズ、Δ は粗さ、と分けて言える。
+What the 32 PCA components could not say, "where does the sample deviate from the ideal", the decomposition separates:
+R is the film, D is anisotropy or noise, Δ is roughness.

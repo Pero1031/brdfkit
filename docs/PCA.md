@@ -1,7 +1,7 @@
-# PCA 圧縮（`brdfkit compress` / `eval` / `export`）
+# PCA compression (`brdfkit compress` / `eval` / `export`)
 
-実測 BRDF 表を、角度ビンごとの短い潜在ベクトルと小さな基底に圧縮します。
-13 GB の hpBRDF をメモリに載せず、φ_d スライス（約 36 MB）単位でストリーミング処理します。
+Compresses a measured BRDF table into a short latent vector per angular bin plus a small basis.
+The 13 GB hpBRDF never has to fit in memory: it is streamed one φ_d slice (about 36 MB) at a time.
 
 ```bash
 python -m brdfkit info     data/kaist/hpbrdf/Aluminum.hpbrdf
@@ -10,56 +10,58 @@ python -m brdfkit eval     data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pc
 python -m brdfkit export   out/pca/Aluminum_pca.npz out/pca/Aluminum.hpbpca
 ```
 
-| オプション | 意味 | 既定 |
+| Option | Meaning | Default |
 |---|---|---|
-| `--k1` | log m00 のチャンネル方向（68 波長、または RGB 3）の主成分数 | 8 |
-| `--k2` | 正規化ミュラー成分 m_ij/m00（チャンネル × 15）の主成分数。無偏光の表では 0 | 32 |
-| `--dtype` | 係数の保存型（`float16` / `float32`） | float16 |
-| `--step` | 共分散推定時の φ_d ストライド（高速化用） | 1 |
+| `--k1` | number of principal components of log m00 along the channel axis (68 wavelengths, or RGB 3) | 8 |
+| `--k2` | number of principal components of the normalized Mueller elements m_ij/m00 (channels × 15). 0 for unpolarized tables | 32 |
+| `--dtype` | storage type of the coefficients (`float16` / `float32`) | float16 |
+| `--step` | φ_d stride during the covariance pass (speed-up) | 1 |
 
-## 表現
+## Representation
 
-1 つの角度ビンを 2 つの PCA に分けて表します。
+Each angular bin is represented by two PCAs.
 
-- **Part A（強度）** `x1 = log(max(m00, eps))`、チャンネル数次元 → k1 係数。
-  対数にすることで鏡面ピークのダイナミックレンジを抑え、PCA がピークだけを説明するのを防ぎます。
-- **Part B（偏光、偏光表のみ）** `x2 = clip(m_ij / m00, −1, 1)`（ij ≠ 00）、チャンネル × 15 次元 → k2 係数。
-  受動的なミュラー行列は |m_ij| ≤ m00 なので、[−1, 1] へのクリップは物理的に正当です。
+- **Part A (intensity)** `x1 = log(max(m00, eps))`, one dimension per channel → k1 coefficients.
+  The logarithm tames the dynamic range of the specular peak, so the PCA does not spend its components on the peak alone.
+- **Part B (polarization, polarized tables only)** `x2 = clip(m_ij / m00, −1, 1)` (ij ≠ 00), channels × 15 dimensions → k2 coefficients.
+  A passive Mueller matrix satisfies |m_ij| ≤ m00, so clipping to [−1, 1] is physically justified.
 
-復号:
+Decoding:
 
 ```
 m00(ch)   = exp( mean_logm00 + basis_logm00 · c1 )
 m_ij(ch)  = m00(ch) · ( mean_ratio + basis_ratio · c2 )[ratio_index]
 ```
 
-未測定ビン（NaN）は学習と評価から外し、係数表では同じ φ_d スライス内の最近傍有効ビンの係数で埋めます。
-`valid` マスクは表に残すので、レンダラー側で別の埋め方に差し替えられます。
+Unmeasured bins (NaN) are excluded from the fit and the evaluation; in the coefficient table they are filled with the
+coefficients of the nearest measured bin of the same φ_d slice. The `valid` mask stays in the table, so a renderer can
+substitute its own fill.
 
-## 出力
+## Output
 
-- `*.npz`: 係数 `coef_logm00` `coef_ratio`、`valid`、平均と基底、角度軸、`channels`、`channel_kind`、`polarized`、`meta`（JSON）。
-  復号の参照実装は `brdfkit/decode.py`（`PCADecoder`）。
-- `*_basis_full.npz`: 全固有ベクトルと寄与率（`eval --sweep` 用）。
-- `*.hpbpca`（`export`）: レンダラー向けの平坦なバイナリ（形式 v2、レイアウトは `cpp/hpbrdf_pca.hpp` 冒頭と `brdfkit/export/hpbpca.py`）。
-  係数は 1 ビンあたり k1 + k2 個を連続で置き、`cpp/hpbrdf_pca.hpp` が読み込みから復号まで行います。
+- `*.npz`: coefficients `coef_logm00` `coef_ratio`, `valid`, means and bases, angular axes, `channels`, `channel_kind`, `polarized`, `meta` (JSON).
+  The reference decoder is `brdfkit/decode.py` (`PCADecoder`).
+- `*_basis_full.npz`: every eigenvector and the explained-variance ratios (for `eval --sweep`).
+- `*.hpbpca` (`export`): a flat binary for renderers (format v2; layout at the top of `cpp/hpbrdf_pca.hpp` and in `brdfkit/export/hpbpca.py`).
+  The k1 + k2 coefficients of each bin are stored contiguously; `cpp/hpbrdf_pca.hpp` does the reading and the decoding.
 
-## 結果
+## Results
 
-**hpBRDF Aluminum（k1 = 8、k2 = 32、float16）**
+**hpBRDF Aluminum (k1 = 8, k2 = 32, float16)**
 
-| 項目 | 値 |
+| Item | Value |
 |---|---|
-| 元ファイル | 13.0 GB |
-| 圧縮後 `.npz` / `.hpbpca` | 231 MB |
-| 処理時間 | 共分散 209 s + 符号化 105 s |
-| 累積寄与率 | log m00: 8 成分で 99.85%、ratio: 32 成分で 99.4% |
-| m00 各波長の相対 RMSE | 10.3%（ほぼ測定ノイズ。残差は波長方向に白色で、2 階差分から見積もったノイズ水準と一致） |
-| m00 を 68 バンドで積分した値の相対誤差 | 中央値 0.2〜0.4%、99 パーセンタイル 約 5% |
-| 正規化ミュラー成分の RMSE | 0.007〜0.023 |
-| 法線入射の方向アルベド | 元テーブル 0.353、復号後 0.351 |
+| Source file | 13.0 GB |
+| Compressed `.npz` / `.hpbpca` | 231 MB |
+| Time | covariance 209 s + encoding 105 s |
+| Cumulative explained variance | log m00: 99.85% with 8 components; ratios: 99.4% with 32 |
+| Relative RMSE of m00 per wavelength | 10.3% (essentially measurement noise: the residual is white along wavelength and matches the noise level estimated from second differences) |
+| Relative error of m00 integrated over the 68 bands | median 0.2–0.4%, 99th percentile about 5% |
+| RMSE of the normalized Mueller elements | 0.007–0.023 |
+| Directional albedo at normal incidence | source table 0.353, decoded 0.351 |
 
-**MERL aluminium（RGB、k1 = 3、float16）**: 9.7 MB、m00 相対 RMSE 0.23%（3 チャンネルを 3 成分で持つので float16 の丸めだけ）。
+**MERL aluminium (RGB, k1 = 3, float16)**: 9.7 MB, relative RMSE of m00 0.23% (3 channels held by 3 components, so only the float16 rounding remains).
 
-**既知の制限**: 鏡面ピークの直近では元テーブルより 10〜18% 低くなることがあります（係数空間の補間 ＝ log 空間の補間）。
-ピークの精度が要るなら θ_h の解像度を上げるか、ピーク周辺だけ元テーブルを参照する構成になります。
+**Known limitation**: right next to the specular peak the decoded value can be 10–18% below the source table
+(interpolation in coefficient space = interpolation in log space). If the peak matters, raise the θ_h resolution
+or look up the source table around the peak.

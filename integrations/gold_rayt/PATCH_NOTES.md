@@ -1,24 +1,24 @@
-# GoLD_rayt への組み込み手順（コード差分）
+# Integration into GoLD_rayt (code changes)
 
-ヘッダ 2 枚を置き、シーンファイルの読み込みに `"type": "measured"` を 3 か所で足すだけです。新しい .cpp はありません。
+Drop in two headers and add `"type": "measured"` to the scene-file loader in three places. No new .cpp files.
 
-## 1. ファイルを置く
+## 1. Place the files
 
-| バンドル内 | GoLD_rayt 内の置き場所 |
+| In this bundle | Where it goes in GoLD_rayt |
 |---|---|
 | `include/Materials/hpbrdf_pca.hpp` | `GoLD_rayt/include/Materials/hpbrdf_pca.hpp` |
 | `include/Materials/MeasuredHpBRDF.hpp` | `GoLD_rayt/include/Materials/MeasuredHpBRDF.hpp` |
-| `out/pca/Aluminum.hpbpca`（brdfkit の出力） | `GoLD_rayt/assets/hpbrdf/Aluminum.hpbpca`（231 MB、.gitignore に入れる） |
+| `out/pca/Aluminum.hpbpca` (brdfkit output) | `GoLD_rayt/assets/hpbrdf/Aluminum.hpbpca` (231 MB; add to .gitignore) |
 | `scenes/hpbrdf_aluminum.json` | `GoLD_rayt/scenes/hpbrdf_aluminum.json` |
 
-`GoLD_rayt.vcxproj` の `<ClInclude>` に 2 つのヘッダを足すとソリューションエクスプローラーに出ます（ビルドには不要）。
-`.filters` では `Materials` フィルタに入れてください。
+Adding the two headers to `<ClInclude>` in `GoLD_rayt.vcxproj` shows them in the Solution Explorer (not needed for the build).
+In `.filters`, put them under the `Materials` filter.
 
 ## 2. `include/Cli/SceneDescription.hpp` — MaterialSpec
 
 ```cpp
 struct MaterialSpec {
-    enum class Type { Diffuse, Conductor, Dielectric, Emission, ThinFilm, Layered, Hair, Skin, Measured };   // Measured を追加
+    enum class Type { Diffuse, Conductor, Dielectric, Emission, ThinFilm, Layered, Hair, Skin, Measured };   // add Measured
     ...
     // measured: a PCA-compressed hpBRDF table (Materials/MeasuredHpBRDF.hpp)
     std::string measuredFile;                      //   the .hpbpca file
@@ -27,7 +27,7 @@ struct MaterialSpec {
 
 ## 3. `src/Cli/SceneFileMaterials.cpp` — ParseMaterial
 
-`type == "emission"` の分岐の手前あたりに追加:
+Add just before the `type == "emission"` branch:
 
 ```cpp
     else if (type == "measured") {   // { "type": "measured", "file": "assets/hpbrdf/Aluminum.hpbpca", "alphaSample": 0.1 }
@@ -40,18 +40,18 @@ struct MaterialSpec {
     }
 ```
 
-先頭のエラーメッセージ（`"must be an object with a \"type\" (diffuse, conductor, ..."`）と、
-最後の `else Fail(...)` の型一覧にも `measured` を足してください。
+Also add `measured` to the error message at the top (`"must be an object with a \"type\" (diffuse, conductor, ..."`)
+and to the type list in the final `else Fail(...)`.
 
-## 4. `src/Cli/Scenes/FileScene.cpp` — 材質の生成
+## 4. `src/Cli/Scenes/FileScene.cpp` — creating the material
 
-include を追加:
+Add the include:
 
 ```cpp
 #include "Materials/MeasuredHpBRDF.hpp"
 ```
 
-`switch (m.type)` に case を追加（`case MaterialSpec::Type::Conductor` の隣）:
+Add a case to `switch (m.type)` (next to `case MaterialSpec::Type::Conductor`):
 
 ```cpp
         case MaterialSpec::Type::Measured: {
@@ -70,27 +70,28 @@ include を追加:
         }
 ```
 
-`MaterialSpec::Type` で switch している場所は `FileScene.cpp` の 1 か所だけです（`grep -rn 'case MaterialSpec::Type'`）。
-`/W4` で列挙子の漏れ警告が出たら、そこに `Measured` を足してください。
+`FileScene.cpp` is the only place that switches on `MaterialSpec::Type` (`grep -rn 'case MaterialSpec::Type'`).
+If `/W4` warns about a missing enumerator, add `Measured` there.
 
-## 5. `docs/SCENE_FILE.md` の材質の表に 1 行
+## 5. One row in the material table of `docs/SCENE_FILE.md`
 
 ```
-| `measured` | `file`（PCA 圧縮した hpBRDF の表 `.hpbpca`。`python -m brdfkit export` で作る）、`alphaSample`（重点サンプリングに使う GGX の α。絵は変わらずノイズだけ変わる。既定 0.1） |
+| `measured` | `file` (a PCA-compressed hpBRDF table `.hpbpca`, made with `python -m brdfkit export`), `alphaSample` (GGX alpha of the importance-sampling lobe; changes only the noise, not the image. Default 0.1) |
 ```
 
-## 6. 動作確認
+## 6. Checking it works
 
 ```bat
 GoLD_rayt.exe scenes\hpbrdf_aluminum.json --spp 16 --width 400
 GoLD_rayt.exe scenes\hpbrdf_aluminum.json --stokes --polarizer 0,90
 ```
 
-- 読み込み時に `[SceneFile] material "aluminum": measured hpBRDF ...` が出る。RGB ビルドは RGB 表の焼き込みに数秒かかります（OpenMP 並列）。
-- `--stokes` の DoLP 画像で、アルミ球の縁（斜入射）ほど偏光度が高く、正面でほぼ 0 になれば、ミュラー行列の受け渡しは正しく動いています（金球と同じ傾向）。
-- 偏光フィルター 0° と 90° で、球の上下（入射面が縦）と左右で明暗が入れ替わります。
+- Loading prints `[SceneFile] material "aluminum": measured hpBRDF ...`. The RGB build takes a few seconds to bake the RGB table (OpenMP parallel).
+- In the `--stokes` DoLP image, the degree of polarization should be high at the rim of the aluminium sphere (oblique incidence) and near 0 at the centre;
+  then the Mueller matrices are passed correctly (same trend as the gold sphere).
+- With polarizers at 0° and 90°, the top/bottom of the sphere (vertical plane of incidence) and the left/right swap brightness.
 
-## 7. スペクトルビルド
+## 7. Spectral build
 
-`Core/RenderMode.hpp` の `RAYT_ENABLE_SPECTRAL 1` でビルドし直すと、eval が経路の 4 波長それぞれで表を復号します。
-GoLD_rayt の波長範囲 360〜830 nm のうち 360〜414 nm は表の外なので 414 nm の値で延ばします（アルミはほぼ平坦なので影響は小さい）。
+Rebuilding with `RAYT_ENABLE_SPECTRAL 1` in `Core/RenderMode.hpp` makes eval decode the table at each of the path's 4 wavelengths.
+Of GoLD_rayt's 360–830 nm range, 360–414 nm lies outside the table and is extended with the 414 nm value (aluminium is nearly flat there, so the effect is small).

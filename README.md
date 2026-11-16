@@ -1,24 +1,25 @@
 # brdfkit
 
-実測 BRDF 表（MERL、KAIST pBRDF 2020、hpBRDF 2025）を読み込み、PCA で圧縮してレンダラーに渡し、偏光の物理量に分解するためのツール群です。
-研究用。コードは MIT、データセットは各自の条件に従います（[LICENSES.md](LICENSES.md)）。
+Tools for measured BRDF tables (MERL, KAIST pBRDF 2020, hpBRDF 2025): loading, PCA compression for renderers,
+and decomposition of the polarimetric data into physical quantities.
+Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LICENSES.md)).
 
-## できること
+## What it does
 
-| 機能 | 入口 | 説明 |
+| Feature | Entry point | Description |
 |---|---|---|
-| 読み込み | `brdfkit.io.load(path)` | `.hpbrdf` / `.pbsdf`（Mitsuba tensor_file）、`.mat`（KAIST 2020）、`.binary`（MERL）を共通の `BRDFTable` に |
-| PCA 圧縮 | `brdfkit compress` / `eval` | 角度ビンごとの潜在ベクトル（hpBRDF: 13 GB → 231 MB、MERL: 10 MB）。[docs/PCA.md](docs/PCA.md) |
-| レンダラー向け書き出し | `brdfkit export` | `.hpbpca` v2。C++17 のヘッダ 1 枚 [`cpp/hpbrdf_pca.hpp`](cpp/hpbrdf_pca.hpp) で読み込みから復号まで |
-| 偏光分析 | `brdfkit lu-chipman` | Lu–Chipman 分解（二色性・位相差・偏光解消）と Fresnel / 薄膜モデルとの比較。[docs/LU_CHIPMAN.md](docs/LU_CHIPMAN.md) |
-| 材質間 PCA | `brdfkit merl-pca` | MERL 100 材質を並べた Matusik 2003 流の PCA。共通基底、材質の分布、leave-one-out の汎化誤差。[docs/MERL_PCA.md](docs/MERL_PCA.md) |
-| GoLD_rayt 連携 | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` 実装と組み込み手順 |
+| Loading | `brdfkit.io.load(path)` | `.hpbrdf` / `.pbsdf` (Mitsuba tensor_file), `.mat` (KAIST 2020), `.binary` (MERL) into one `BRDFTable` |
+| PCA compression | `brdfkit compress` / `eval` | A short latent vector per angular bin (hpBRDF: 13 GB → 231 MB, MERL: 10 MB). [docs/PCA.md](docs/PCA.md) |
+| Export for renderers | `brdfkit export` | `.hpbpca` v2. One C++17 header, [`cpp/hpbrdf_pca.hpp`](cpp/hpbrdf_pca.hpp), reads and decodes it |
+| Polarimetric analysis | `brdfkit lu-chipman` | Lu–Chipman decomposition (diattenuation, retardance, depolarization) compared with Fresnel and thin-film models. [docs/LU_CHIPMAN.md](docs/LU_CHIPMAN.md) |
+| Inter-material PCA | `brdfkit merl-pca` | Matusik 2003-style PCA across the 100 MERL materials: common basis, material distribution, leave-one-out generalization error. [docs/MERL_PCA.md](docs/MERL_PCA.md) |
+| GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
-## 使い方
+## Usage
 
 ```bash
-pip install -e .            # numpy, scipy（図を出すなら .[plot]）
-python tests/run_tests.py   # 合成データでの自己検証（実データがあればその読み込みも）
+pip install -e .            # numpy, scipy (add .[plot] for figures)
+python tests/run_tests.py   # self-checks on synthetic data (and the real loaders when the files are present)
 
 python -m brdfkit info     data/kaist/hpbrdf/Aluminum.hpbrdf
 python -m brdfkit compress data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pca.npz --k1 8 --k2 32
@@ -28,32 +29,32 @@ python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx
 python -m brdfkit merl-pca   D:\Jack_spallow\MERL_BRDF_database\brdfs --out out/merl_analysis/log
 ```
 
-Python から:
+From Python:
 
 ```python
 from brdfkit.io import load
 from brdfkit.decode import PCADecoder
 
-t = load('data/merl/aluminium.binary')          # BRDFTable: 軸、チャンネル、値（または φ_d スライスのイテレータ）
+t = load('data/merl/aluminium.binary')          # BRDFTable: axes, channels, values (or an iterator over phi_d slices)
 dec = PCADecoder('out/pca/Aluminum_pca.npz')
-r = dec.eval(to_light, to_view, 550.0)          # m00（f_r、コサイン項なし）とミュラー行列 M、基準ベクトル x_in / x_out
+r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine term), Mueller matrix M, reference vectors x_in / x_out
 ```
 
-## 構成
+## Layout
 
 ```
-brdfkit/         パッケージ: table（共通表現）、io/（loaders）、geometry（Rusinkiewicz 座標、Stokes 基底）、
-                 compress/pca、decode（参照復号器）、export/hpbpca、analysis/{lu_chipman, merl_pca}、cli
-cpp/             C++ 復号器の本籍（hpbrdf_pca.hpp）と Python との一致確認ドライバ
-integrations/    gold_rayt/: GoLD_rayt 用 Material、組み込み手順、ビルド確認
-tests/           合成 BRDF での自己検証（pytest 不要: python tests/run_tests.py）
-docs/            PCA.md、LU_CHIPMAN.md、MERL_PCA.md
-data/, out/      データセットと派生物。git 対象外
+brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca}, cli
+cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
+integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
+tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
+docs/            PCA.md, LU_CHIPMAN.md, MERL_PCA.md
+data/, out/      datasets and derived files; not tracked by git
 ```
 
-## 規約
+## Conventions
 
-方向はローカルシェーディング座標（法線 +z）で、`to_light`（表面→光源）と `to_view`（表面→視点）。
-Rusinkiewicz 座標とミュラー行列のフレームは Mitsuba 3 の `measured_polarized` プラグインと同じで、
-基準ベクトルは反射面内にあります。GoLD_rayt の (s, p) 基底へは `geometry.mueller_to_sp` で回します。
-詳細は `brdfkit/geometry.py` と `cpp/hpbrdf_pca.hpp` の冒頭。
+Directions are in the local shading frame (normal = +z): `to_light` (surface → light) and `to_view` (surface → viewer).
+The Rusinkiewicz coordinates and the Mueller-matrix frames are those of the Mitsuba 3 `measured_polarized` plugin,
+with reference vectors in the plane of reflection. `geometry.mueller_to_sp` rotates into the (s, p) bases of GoLD_rayt.
+Details at the top of `brdfkit/geometry.py` and `cpp/hpbrdf_pca.hpp`.
