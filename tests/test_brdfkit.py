@@ -18,6 +18,8 @@ from brdfkit.decode import decode, PCADecoder                  # noqa: E402
 from brdfkit.export import hpbpca                              # noqa: E402
 from brdfkit.analysis import lu_chipman as LC                  # noqa: E402
 from brdfkit.analysis import merl_pca as MP                    # noqa: E402
+from brdfkit.analysis import merl_project as MJ                # noqa: E402
+from brdfkit import color                                      # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
 DATA_HPBRDF = os.environ.get('BRDFKIT_HPBRDF', os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf'))
@@ -239,3 +241,105 @@ def test_merl_loader_real():
     assert not t.polarized and t.channel_kind == RGB and t.values.shape == (180, 90, 90, 3)
     sl = t.slice(90); v = t.valid(sl)
     assert v.mean() > 0.5 and np.nanmax(sl) > 1 and np.nanmin(sl[v]) >= 0
+
+
+# ----------------------------------------------------------------------------- hpBRDF -> MERL PCA space
+def test_color_weights():
+    """band weights: columns sum to 1, flat spectrum -> equal RGB, constants identical to the renderer's MeasuredHpBRDF.hpp"""
+    import re
+    wv = np.arange(414, 951, 8.0)
+    w = color.rgb_band_weights(wv)
+    assert w.shape == (68, 3) and np.allclose(w.sum(0), 1.0)
+    assert np.allclose(np.ones(68) @ w, 1.0)
+    red = np.where(wv > 600, 1.0, 0.0) @ w
+    blue = np.where(wv < 480, 1.0, 0.0) @ w
+    assert red[0] > 0.3 and red[0] > red[2] and blue[2] > 0.3 and blue[2] > blue[0], (red, blue)
+    hdr = open(os.path.join(ROOT, 'integrations', 'gold_rayt', 'include', 'Materials', 'MeasuredHpBRDF.hpp'), encoding='utf-8').read()
+    for axis in 'xyz':
+        line = re.search(r'(?m)^\s*' + axis + r' = ([^;]*);', hdr[hdr.index('static void cmf'):]).group(1)
+        lobes = [(-1.0 if sgn.strip() == '-' else 1.0, float(a), float(mu), float(s1), float(s2))
+                 for sgn, a, mu, s1, s2 in re.findall(r'([+-]?)\s*(\d+\.\d+) \* lobe\(lam, ([\d.]+), ([\d.]+), ([\d.]+)\)', line)]
+        assert len(lobes) == len(color.CMF_LOBES[axis]), (axis, line)
+        for (sg, a, mu, s1, s2), (a0, mu0, s10, s20) in zip(lobes, color.CMF_LOBES[axis]):
+            assert abs(sg * a - a0) < 1e-12 and (mu, s1, s2) == (mu0, s10, s20), (axis, line)
+    for v in color.XYZ_TO_SRGB.ravel():
+        assert f'{abs(v):.4f}' in hdr, v
+
+
+def _merl_like_table(asym=0.0, nan_corner=True):
+    """unpolarized 4-band table on a grid containing the MERL grid (phi_d every 1 deg over [-180, 180], theta_d and the squared
+    theta_h axis up to and including 90 deg); f obeys the symmetries f(phi) = f(-phi) = f(phi + pi) up to the antisymmetric
+    term asym * sin(phi), which the phi-equivalent average removes"""
+    from brdfkit.io import merl
+    pm, tdm, thm = merl.grid_axes()
+    phi = np.radians(np.arange(-180, 181.0)); td = np.append(tdm, np.pi / 2); th = np.append(thm, np.pi / 2)
+    wv = np.array([450.0, 550.0, 600.0, 650.0])
+
+    def f(j):
+        D, H = np.meshgrid(td, th, indexing='ij')
+        v = (0.05 + 4.0 * np.exp(-(H / 0.1) ** 2) * (1 + 0.5 * D)) * (1 + 0.3 * np.cos(2 * phi[j])) + asym * np.sin(phi[j])
+        v = np.repeat(v[..., None], 4, -1).astype(np.float32)
+        if nan_corner:
+            v[-3:, -3:] = np.nan
+        return v
+    return BRDFTable(phi, td, th, wv, WAVELENGTH, False, dict(source='synthetic'), slice_fn=f), (pm, tdm, thm)
+
+
+def test_merl_grid_rgb():
+    t, (pm, tdm, thm) = _merl_like_table(asym=0.2)
+    full, info = MJ.merl_grid_rgb(t, 'full', log=lambda *a: None)
+    none, _ = MJ.merl_grid_rgb(t, 'none', log=lambda *a: None)
+    assert full.values.shape == (180, 90, 90, 3) and none.values.shape == full.values.shape
+    D, H = np.meshgrid(tdm, thm, indexing='ij')
+    for b in (0, 17, 90, 133, 179):
+        g = (0.05 + 4.0 * np.exp(-(H / 0.1) ** 2) * (1 + 0.5 * D)) * (1 + 0.3 * np.cos(2 * pm[b]))
+        ok = np.isfinite(full.values[b]).all(-1)
+        assert ok.sum() > 0.9 * ok.size
+        # flat spectrum -> equal RGB; the symmetric average removes the antisymmetric term, 'none' keeps it
+        assert np.allclose(full.values[b][ok], np.repeat(g[ok][:, None], 3, 1), rtol=2e-5, atol=2e-5)
+        assert np.allclose(none.values[b][ok], np.maximum(np.repeat(g[ok][:, None], 3, 1) + 0.2 * np.sin(pm[b]), 0), rtol=2e-5, atol=2e-5)
+    assert np.isnan(full.values[:, -2:, -2:]).all() and np.isfinite(full.values[:, :-2]).all()    # the NaN corner, cut to the MERL range
+    assert np.array_equal(full.values[10], full.values[170], equal_nan=True) and np.isfinite(info['spread']).any() and np.nanmax(info['spread']) > 0.01
+    # a table whose axes do not contain the MERL grid is rejected
+    bad = BRDFTable(t.phi_d, t.theta_d, t.theta_h * 0.99, t.channels, WAVELENGTH, False, {}, slice_fn=t.slice_fn)
+    try:
+        MJ.merl_grid_rgb(bad, log=lambda *a: None)
+    except ValueError as e:
+        assert 'theta_h' in str(e)
+    else:
+        raise AssertionError('mismatching axis accepted')
+
+
+def test_project_masked():
+    mats, A = synthetic_material_set()
+    model, Xc = MP.fit(mats, stride=1, mapping='log', k=6, log=lambda *a: None)
+    v = mats[3][1].values
+    c, info = model.project_masked(v, 4)
+    assert np.allclose(c, model.project(v, 4), atol=1e-3) and info['n_used'] == info['n_total'] and info['cond'] < 1.001
+    # unmeasured bins inside the model mask: the masked fit stays close, the plain fit refuses
+    w = v.copy(); w[:, 2, 2:5] = np.nan
+    c2, info2 = model.project_masked(w, 4)
+    assert info2['n_used'] < info2['n_total'] and np.abs(c2 - c).max() < 0.1 * np.abs(c).max(), (c, c2)
+    try:
+        model.project(w)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('project accepted unmeasured bins')
+
+
+def test_merl_project_real():
+    """the hpBRDF axes contain the MERL grid, and one slice of the real table gives a sane RGB slice"""
+    if not os.path.exists(DATA_HPBRDF):
+        return 'skipped (no hpBRDF file)'
+    from brdfkit.io import merl
+    t = hpbrdf.load(DATA_HPBRDF)
+    pm, tdm, thm = merl.grid_axes()
+    MJ._index_of(t.theta_d, tdm, 'theta_d'); MJ._index_of(t.theta_h, thm, 'theta_h')
+    j = int(np.argmin(np.abs(t.phi_d - np.pi / 2)))
+    rgb = t.m00(t.slice(j)) @ color.rgb_band_weights(t.channels)
+    fin = np.isfinite(rgb).all(-1)
+    assert fin.mean() > 0.9 and rgb[fin].max() > 1 and np.median(rgb[fin]) < 1
+    pos = rgb[fin][(rgb[fin] > 1e-3).all(-1)]
+    peak = pos[pos.mean(-1) > np.percentile(pos.mean(-1), 95)]                          # the specular region of aluminium is nearly grey
+    assert np.abs(np.median(np.log(peak[:, 0] / peak[:, 2]))) < 0.3

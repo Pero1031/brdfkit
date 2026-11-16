@@ -101,6 +101,20 @@ class MaterialPCA:
             raise ValueError('table has unmeasured bins inside the model mask')
         return (x - self.mean) @ self.basis[:, :k]
 
+    def project_masked(self, values, k=None):
+        """least-squares coefficients [k] of a table that may be unmeasured (NaN) in part of the model mask
+        (the full-mask `project` is the special case where the basis rows are orthonormal).
+        -> (coef, info) with info = n_used, n_total, cond (condition number of the restricted basis), rmse (feature-space RMSE over the used entries)"""
+        k = self.k if k is None else min(int(k), self.k)
+        x = self.features(values) - self.mean
+        use = np.isfinite(x)
+        if use.sum() < 8 * k:
+            raise ValueError(f'only {use.sum()} measured features inside the model mask, too few for {k} coefficients')
+        B = self.basis[use, :k]
+        coef, _, _, sv = np.linalg.lstsq(B, x[use], rcond=None)
+        rmse = float(np.sqrt(np.mean((x[use] - B @ coef) ** 2)))
+        return coef, dict(n_used=int(use.sum()), n_total=int(use.size), cond=float(sv[0] / max(sv[-1], 1e-300)), rmse=rmse)
+
     def reconstruct(self, coef, k=None):
         """coefficients [k'] -> linear BRDF values on the strided grid [P', T', H', 3] (NaN outside the common mask)"""
         c = np.asarray(coef, np.float64)[:k]

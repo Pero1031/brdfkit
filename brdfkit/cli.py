@@ -7,6 +7,7 @@ brdfkit command line.
   brdfkit export    OUT.npz OUT.hpbpca [--dtype float16]
   brdfkit lu-chipman OUT.npz --refidx Al_Rakic.yml [Al_McPeak.yml ...] --out DIR [--raw TABLE] [--n-film 1.65]
   brdfkit merl-pca  DIR_OR_FILES... --out DIR [--stride 2] [--k 16] [--mapping log|nielsen] [--eps E] [--no-plot]
+  brdfkit merl-project TABLE --model MERL_PCA.npz [MERL_PCA.npz ...] --out DIR [--k 16] [--sym full|none] [--reference MERL.binary] [--recompute] [--no-plot]
 
 TABLE: .hpbrdf / .pbsdf (Mitsuba tensor_file), .mat (KAIST pBRDF 2020), .binary (MERL).
 """
@@ -30,6 +31,11 @@ def main(argv=None):
     p.add_argument('--out', required=True); p.add_argument('--stride', default='2', help='grid stride, one int or phi_d,theta_d,theta_h')
     p.add_argument('--k', type=int, default=16, help='components kept in the basis'); p.add_argument('--mapping', choices=('log', 'nielsen'), default='log')
     p.add_argument('--eps', type=float, default=None); p.add_argument('--no-plot', action='store_true')
+    p = sub.add_parser('merl-project', help='project a table (e.g. hpBRDF aluminium) onto saved MERL PCA models'); p.add_argument('table')
+    p.add_argument('--model', nargs='+', required=True, help='merl_pca.npz written by merl-pca'); p.add_argument('--out', required=True)
+    p.add_argument('--k', type=int, default=16); p.add_argument('--sym', choices=('full', 'none'), default='full', help='average the phi_d-equivalent slices (full) or not')
+    p.add_argument('--reference', default=None, help='MERL .binary of a comparison material'); p.add_argument('--recompute', action='store_true')
+    p.add_argument('--no-plot', action='store_true')
     a = ap.parse_args(argv)
 
     if a.cmd == 'info':
@@ -54,6 +60,9 @@ def main(argv=None):
         from .analysis.merl_pca import run_report
         stride = [int(s) for s in a.stride.split(',')]
         run_report(a.paths, a.out, stride[0] if len(stride) == 1 else stride, a.k, a.mapping, a.eps, plot=not a.no_plot)
+    elif a.cmd == 'merl-project':
+        from .analysis.merl_project import run_report
+        run_report(a.table, a.model, a.out, a.k, a.sym, a.reference, a.recompute, plot=not a.no_plot)
 
 
 if __name__ == '__main__':

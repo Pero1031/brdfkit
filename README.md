@@ -15,6 +15,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Export for renderers | `brdfkit export` | `.hpbpca` v2. One C++17 header, [`cpp/hpbrdf_pca.hpp`](cpp/hpbrdf_pca.hpp), reads and decodes it |
 | Polarimetric analysis | `brdfkit lu-chipman` | Lu–Chipman decomposition (diattenuation, retardance, depolarization) compared with Fresnel and thin-film models. [docs/LU_CHIPMAN.md](docs/LU_CHIPMAN.md) |
 | Inter-material PCA | `brdfkit merl-pca` | Matusik 2003-style PCA across the 100 MERL materials: common basis, material distribution, leave-one-out generalization error. [docs/MERL_PCA.md](docs/MERL_PCA.md) |
+| Projection onto MERL PCA | `brdfkit merl-project` | Place a measured table (hpBRDF aluminium) in the MERL principal-component space: coefficients, residual, nearest materials. [docs/HPBRDF_ON_MERL.md](docs/HPBRDF_ON_MERL.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
 ## Usage
@@ -29,6 +30,7 @@ python -m brdfkit eval     data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pc
 python -m brdfkit export   out/pca/Aluminum_pca.npz out/pca/Aluminum.hpbpca
 python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml --out out/analysis
 python -m brdfkit merl-pca   data/merl --out out/merl_analysis/log
+python -m brdfkit merl-project data/kaist/hpbrdf/Aluminum.hpbrdf --model out/merl_analysis/log/merl_pca.npz --out out/hpbrdf_on_merl --reference data/merl/aluminium.binary
 ```
 
 Datasets are not included (see [LICENSES.md](LICENSES.md)). The examples and the optional real-data tests expect
@@ -50,11 +52,11 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca}, cli
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project}, color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            PCA.md, LU_CHIPMAN.md, MERL_PCA.md
+docs/            PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md
 data/, out/      datasets and derived files; not tracked by git
 ```
 
