@@ -361,3 +361,17 @@ def test_subset_residuals():
     assert np.isfinite(ln2).all() and abs(ln2[0] - ln[2]) < 0.05
     for name in MS.METALS + MS.FINISHES:
         assert isinstance(name, str)
+
+
+def test_grid_stats():
+    """peak shape and floor statistics of a table on the MERL grid"""
+    th = np.arange(90)
+    core = np.where(th < 6, 10.0, 10.0 * np.exp(-(th - 5) / 3.0))                      # flat for the first 6 bins, then decays
+    v = np.full((180, 90, 90, 3), 0.01, np.float32)
+    v[:, :, :, 1] = np.maximum(core, 0.01)[None, None, :]
+    v[:, :, 60:, 1] = 0.002
+    v[10, 5, 3, 1] = 50.0
+    st = MJ.grid_stats(v)
+    assert st['peak_max'] == 50.0 and st['peak_core'] == 10.0 and abs(st['flat_ratio'] - 1.0) < 1e-6 and abs(st['floor'] - 0.002) < 1e-9
+    v[:, :, :, 1] = np.maximum(10.0 * np.exp(-th / 3.0), 0.01)[None, None, :]
+    assert MJ.grid_stats(v)['flat_ratio'] < 0.2

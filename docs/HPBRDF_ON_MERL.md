@@ -126,12 +126,47 @@ ln RMSE of the log BRDF (relative RMSE of f cos θi cos θo in the last column):
   and grease-covered-steel (+0.008), so metals are 5 of the top 6, but each effect is within a few percent of the residual. The core component comes from the
   combined variety of the set, which is why neither 11 metals nor 23 materials reproduce it, and why dropping one material does not remove it.
 
+## Three more hpBRDF materials (`brdfkit merl-compare`)
+
+To see whether the aluminium result is specific to that sample, Fake gold, SUJ2 (bearing steel) and Black glass (13 GB each, from the dataset's Hugging Face
+page) went through the same pipeline, each into its own folder, and `brdfkit merl-compare` summarizes the four runs:
+
+```bash
+python -m brdfkit merl-project data/kaist/hpbrdf/Black_glass.hpbrdf --model out/merl_analysis/log/merl_pca.npz out/merl_analysis/nielsen/merl_pca.npz     --out out/hpbrdf_on_merl_Black_glass --reference data/merl/black-obsidian.binary
+python -m brdfkit merl-compare out/hpbrdf_on_merl out/hpbrdf_on_merl_Black_glass out/hpbrdf_on_merl_Fake_gold out/hpbrdf_on_merl_SUJ2
+```
+
+| | Aluminum | Black glass | Fake gold | SUJ2 |
+|---|---|---|---|---|
+| f at θ_h = 0 (φ_d 90°, θ_d 30°, green) | 20.6 | 2.37 | 28.1 | 10.0 |
+| f(θ_h = 0.28°) / f(0) (1 = flat top) | 0.975 | 0.961 | 0.958 | 0.971 |
+| floor (median f at θ_h ≥ 40°) | 0.0138 | 0.0064 | 0.0078 | 0.0077 |
+| φ_d spread of the equivalent slices (median) | 0.163 | 0.066 | 0.126 | 0.139 |
+| residual at k = 16, log / nielsen | 0.32 / 0.28 | 0.38 / 0.29 | 0.51 / 0.37 | 0.37 / 0.30 |
+| most extreme component, log (z) | PC7 (−7.0) | PC7 (−6.1) | PC7 (−8.0) | PC7 (−6.5) |
+| MERL comparison material, rank by distance (log / nielsen) | aluminium 18 / 15 | black-obsidian 100 / 21 | two-layer-gold 11 / 17 | steel 69 / 45 |
+
+For comparison the MERL materials at the same place: black-obsidian f(0) = 43.7 (falling to 3.0 at 0.28°) and a floor of 1e-4; aluminium f(0) = 438, floor 0.002.
+
+- **The core component is a property of the hpBRDF tables, not of the aluminium.** All four materials lean hardest on PC7 in the log model (z from −6.1 to −8.0), and all four have
+  the same flat specular top: f at 0.28° is 96–98% of f at 0°, also for the smooth black glass, whose true peak is far sharper (MERL's obsidian loses 93% over the same range).
+  A smooth dielectric cannot be flat-topped by itself, so the flat top is consistent with the angular resolution of the measurement. This is an inference from the four tables; it
+  was not checked against the measurement description.
+- **A common floor.** Far from the lobe the tables sit at 0.0064–0.0078 for the glass, the gold and the steel, three very different surfaces, while the MERL obsidian is at 1e-4. A glass has no
+  diffuse scattering at that level, so a floor of about 0.007 is probably an instrument floor (stray light or noise); only the aluminium is higher (0.014), possibly real scattering.
+  This floor is also why hpBRDF tables look about 3 times brighter than MERL in the median ln ratio (×3.1 for the glass, ×3.3 for the steel against steel, ×3.5 for the aluminium):
+  most bins are far from the lobe. A constant 0.007 adds about 2% to the albedo (π × 0.007).
+- **Dark materials are dominated by the floor in the log mapping.** The black glass is the 100th of 100 by distance to the MERL obsidian in the log model (21st in nielsen), because ln(0.006 / 1e-4) is a
+  large constant over most of the hemisphere. Distances of dark materials in the log model say more about the floor than about the lobe shapes.
+- **Fake gold is the worst represented** (0.51 log, 0.37 nielsen) and lands next to green and violet acrylic rather than gold paints. Its colour (median ratio to MERL two-layer-gold
+  0.39 / 0.49 / 0.73 in R / G / B) shows the colour conventions of the two sets differ, as noted below; hue components of the comparison should not be over-read.
+- **Symmetry.** The φ_d spread is lowest for the glass (0.07, the 4-slice average has the least to remove) and 0.13–0.16 for the three metals.
+
 ## Caveats
 
 - MERL's RGB is a camera-calibrated colour (channel scales 1 : 1.15 : 1.66); the hpBRDF RGB here is sRGB with an equal-energy white. Hue components (PC4 and above) therefore
   compare two different colour conventions; the aluminium is nearly grey in the specular region, but the off-peak bins are bluish (median R/B ≈ 0.56 over the φ_d = 90° slice; cause not checked).
-- One hpBRDF material only; the other 12 have not been projected. A single point does not say how well the MERL basis generalizes to measured
-  hpBRDF metals in general.
+- Four hpBRDF materials of 14 have been projected, all from one instrument. They agree with each other, which does not separate the instrument from the dataset's processing.
 - The subset study uses 11 and 23 materials, so at most 9 and 21 components; the comparison with random subsets of the same size is what makes it fair, but a basis
   of a few dozen materials is small whatever it is made of. Only the log mapping was studied.
 - Distances are in feature-norm units of the log (or nielsen) mapping on the common mask; they are comparable between materials of one model, not between models.

@@ -15,6 +15,7 @@ horizon that MERL measured, so the projection is masked), residuals for k = 1..K
 coefficient space, and a comparison with the MERL aluminium when given.
 `run_report` does both for one or more saved `MaterialPCA` models and writes reports and figures.
 """
+import glob
 import json
 import os
 import time
@@ -333,3 +334,36 @@ def run_report(source, model_paths, out_dir, k=16, sym='full', reference=None, r
             _plots(model, res, table, ref, name, sub, 'hpbrdf_on_merl')
         summary[model.mapping] = res
     return summary
+
+
+# ----------------------------------------------------------------------------- comparison of several runs
+def grid_stats(values, iphi=90, itd=30):
+    """peak shape and floor of a table on the MERL grid (green channel): peak_max over the grid, peak_core = f at theta_h = 0 for
+    phi_d = iphi deg and theta_d = itd deg, flat_ratio = f(theta_h = 0.28 deg) / f(0) there (1 = flat top), floor = median of f over
+    theta_h >= 40 deg and theta_d < 80 deg (far from the specular lobe)"""
+    g = values[iphi, itd, :, 1]
+    return dict(peak_max=float(np.nanmax(values[..., 1])), peak_core=float(g[0]), flat_ratio=float(g[5] / g[0]),
+                floor=float(np.nanmedian(values[:, :80, 60:, 1])))
+
+
+def compare_runs(run_dirs, say=print):
+    """summarize several `merl-project` output folders (one table each): peak, floor, phi_d spread, and per mapping the residual,
+    the most extreme component, the nearest MERL materials and the comparison with the reference material"""
+    for d in run_dirs:
+        npz = glob.glob(os.path.join(d, '*_merl_grid_full.npz'))
+        if not npz:
+            raise ValueError(f'{d}: no *_merl_grid_full.npz (run merl-project with --sym full first)')
+        name = os.path.basename(npz[0]).split('_merl_grid')[0]
+        t, info = load_grid(npz[0])
+        st, sp = grid_stats(t.values), info['spread'][np.isfinite(info['spread'])]
+        say(f'\n== {name}: max {st["peak_max"]:.2f}, f(theta_h = 0) {st["peak_core"]:.2f} at phi_d 90, theta_d 30 deg, flat-top ratio {st["flat_ratio"]:.3f}, '
+            f'floor {st["floor"]:.4f}, phi_d spread median {np.median(sp):.3f}')
+        for mapping in ('log', 'nielsen'):
+            pj = json.load(open(os.path.join(d, mapping, 'projection.json')))
+            model = MaterialPCA.load(pj['model'])
+            c = np.array(pj['coef']); z = c / model.coef[:, :len(c)].std(0)
+            ref = pj.get('reference', {})
+            say(f'  {mapping:8s} rmse k=8 {pj["rmse_k"][pj["ks"].index(8)]:.3f} k={pj["k"]} {pj["rmse_k"][-1]:.3f}; max |z| {np.abs(z).max():.1f} at PC{np.abs(z).argmax() + 1}, '
+                f'z7 {z[6]:+.1f}; nearest {", ".join(x["name"] for x in pj["nearest"][:4])}' +
+                (f'; {ref["name"]}: rank {ref["rank"]}, raw RMSE {ref["raw_rmse"]:.2f}, median ratio RGB ' +
+                 '/'.join(f'{np.exp(v):.2f}' for v in ref['log_ratio_rgb']) if ref else ''))

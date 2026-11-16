@@ -9,6 +9,7 @@ brdfkit command line.
   brdfkit merl-pca  DIR_OR_FILES... --out DIR [--stride 2] [--k 16] [--mapping log|nielsen] [--eps E] [--no-plot]
   brdfkit merl-project TABLE --model MERL_PCA.npz [MERL_PCA.npz ...] --out DIR [--k 16] [--sym full|none] [--reference MERL.binary] [--recompute] [--no-plot]
   brdfkit merl-subsets MERL_GRID.npz MERL_DIR --out DIR [--all-model MERL_PCA.npz] [--random 30] [--seed 0] [--ablate]
+  brdfkit merl-compare RUN_DIR [RUN_DIR ...]      (summary of several merl-project outputs)
 
 TABLE: .hpbrdf / .pbsdf (Mitsuba tensor_file), .mat (KAIST pBRDF 2020), .binary (MERL).
 """
@@ -42,6 +43,7 @@ def main(argv=None):
     p.add_argument('--all-model', default=None, help='saved 100-material merl_pca.npz (log), for leave-one-out numbers')
     p.add_argument('--random', type=int, default=30, help='random control subsets per size'); p.add_argument('--seed', type=int, default=0)
     p.add_argument('--ablate', action='store_true', help='refit without each material in turn (100 fits)')
+    p = sub.add_parser('merl-compare', help='summarize several merl-project output folders'); p.add_argument('run_dirs', nargs='+')
     a = ap.parse_args(argv)
 
     if a.cmd == 'info':
@@ -72,6 +74,10 @@ def main(argv=None):
     elif a.cmd == 'merl-subsets':
         from .analysis.merl_subsets import run_study
         run_study(a.grid, a.merl_dir, a.out, a.all_model, a.random, a.seed, a.ablate)
+
+    elif a.cmd == 'merl-compare':
+        from .analysis.merl_project import compare_runs
+        compare_runs(a.run_dirs)
 
 
 if __name__ == '__main__':
