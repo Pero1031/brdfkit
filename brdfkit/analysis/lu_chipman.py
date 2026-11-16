@@ -246,7 +246,7 @@ def run_report(npz, refidx, out_dir, raw=None, n_film=1.65, log=print):
         j = int(np.argmin(np.abs(wvls - lam)))
         say(f'\n--- {wvls[j]:.0f} nm')
         say('  theta    D meas  D Fres  D film |  R meas  R Fres  R film (deg) |  Delta   DI     m00')
-        for th in (10, 20, 30, 45, 60, 70, 80):
+        for th in (20, 25, 30, 45, 60, 70, 80):     # hpBRDF measures theta_d ~ 20-80 deg only; below is inpainted
             i = int(np.argmin(np.abs(thetas - th)))
             say(f'  {th:3d}     {data["D"][i, j]:.3f}   {fres[metals[0].name]["D"][i, j]:.3f}   {film["D"][i, j]:.3f}  |  '
                 f'{np.degrees(data["R"][i, j]):6.1f}  {np.degrees(fres[metals[0].name]["R"][i, j]):6.1f}  {np.degrees(film["R"][i, j]):6.1f}       |  '
