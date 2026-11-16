@@ -22,6 +22,7 @@ from brdfkit.analysis import merl_project as MJ                # noqa: E402
 from brdfkit import color                                      # noqa: E402
 from brdfkit.analysis import merl_subsets as MS                # noqa: E402
 from brdfkit.analysis import floor as FL                       # noqa: E402
+from brdfkit.analysis import factor as FA                      # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -437,3 +438,49 @@ def test_floor_rgb():
     v[:, :, 50:] = 0.005
     r = MJ.floor_rgb(t, fl, keep=0.02).values
     assert np.allclose(r[1, 1, 60], 0.0001)
+
+
+def _separable_table(noise=0.0, seed=0):
+    """m00 = A(angles) S(theta_d, lambda), m_ij/m00 = N(theta_d, lambda): exactly the factor model (plus optional noise)"""
+    rng = np.random.default_rng(seed)
+    phi_d = np.linspace(-np.pi, np.pi, 9); theta_d = np.radians(np.arange(0, 91, 5.0)); theta_h = (np.arange(16) / 15) ** 2 * (np.pi / 2)
+    wv = np.linspace(420, 900, 7)
+    P, D, Hh = np.meshgrid(phi_d, theta_d, theta_h, indexing='ij')
+    A = 0.02 + 6.0 * np.exp(-(Hh / 0.1) ** 2) * (1 + 0.2 * np.cos(P))
+    td = theta_d[:, None]
+    S = 0.5 + 0.3 * np.sin(td) * (wv[None] - 420) / 480 + 0.1 * np.cos(wv[None] / 100)
+    N = np.zeros((len(theta_d), len(wv), 15))
+    N[..., 0] = 0.4 * np.sin(td) ** 2 * (wv[None] / 900); N[..., 4] = 0.95; N[..., 9] = -0.9 * np.cos(2 * td); N[..., 14] = N[..., 9]
+    m00 = A[..., None] * S[None, :, None, :]
+    M = np.empty(m00.shape + (16,), np.float32)
+    M[..., 0] = m00 * (1 + noise * rng.standard_normal(m00.shape)); M[..., 1:] = m00[..., None] * N[None, :, None]
+    M = M.reshape(m00.shape + (4, 4)); M[0, -1, -1] = np.nan
+    return BRDFTable(phi_d, theta_d, theta_h, wv, WAVELENGTH, True, dict(source='synthetic'), values=M), A, S, N
+
+
+def test_factor_exact():
+    """a separable table is recovered: A x S reproduces m00, N matches, the view rebuilds the table, save/load/io.load round-trip"""
+    t, A, S, N = _separable_table()
+    m0, m5 = FA.fit(t, measured_theta_d=(0, 90), smooth_deg=(0.0, 10.0), log=lambda *a: None)
+    assert m0['errors']['m00_rel_rmse']['all_theta_d']['all'] < 1e-5 and m0['errors']['N_rmse']['all_theta_d']['all'] < 1e-5
+    assert np.allclose(m0['N'], N, atol=1e-5)
+    yw = FA.luminance_weights(t.channels); assert np.allclose(m0['S'] @ yw, 1.0)
+    assert np.allclose(m0['S'], S / (S @ yw)[:, None], rtol=1e-5)                         # S up to the luminance normalization
+    assert m5['errors']['m00_rel_rmse']['all_theta_d']['all'] > m0['errors']['m00_rel_rmse']['all_theta_d']['all']
+    v = FA.view(m0)
+    ok = np.isfinite(t.values)
+    assert np.allclose(v.slice(4)[ok[4]], t.values[4][ok[4]], rtol=1e-4, atol=1e-6) and np.isnan(v.slice(0)[-1, -1]).all()
+    from brdfkit.io import load as io_load
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 'm.npz'); FA.save(p, m0)
+        assert FA.is_model(p) and np.allclose(io_load(p).slice(2), v.slice(2), rtol=2e-3, atol=1e-5)   # A stored as float16
+
+
+def test_factor_measured_range():
+    """outside the measured theta_d range S and N are copied from the nearest measured theta_d"""
+    t, A, S, N = _separable_table(noise=0.01)
+    m = FA.fit(t, measured_theta_d=(20, 80), log=lambda *a: None)[0]
+    td = np.degrees(t.theta_d); lo = np.nonzero(td >= 20)[0][0]; hi = np.nonzero(td <= 80)[0][-1]
+    assert np.allclose(m['S'][:lo], m['S'][lo]) and np.allclose(m['S'][hi + 1:], m['S'][hi]) and np.allclose(m['N'][:lo], m['N'][lo])
+    e = m['errors']['m00_rel_rmse']
+    assert e['measured_theta_d']['all'] < 0.012 and e['all_theta_d']['all'] > 1.5 * e['measured_theta_d']['all']   # copied rows miss the true S
