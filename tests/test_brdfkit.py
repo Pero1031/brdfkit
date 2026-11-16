@@ -17,9 +17,11 @@ from brdfkit.compress import compress, evaluate                # noqa: E402
 from brdfkit.decode import decode, PCADecoder                  # noqa: E402
 from brdfkit.export import hpbpca                              # noqa: E402
 from brdfkit.analysis import lu_chipman as LC                  # noqa: E402
+from brdfkit.analysis import merl_pca as MP                    # noqa: E402
 
 DATA_HPBRDF = os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf')
-DATA_MERL = r'D:\Jack_spallow\MERL_BRDF_database\brdfs\aluminium.binary'
+DATA_MERL_DIR = r'D:\Jack_spallow\MERL_BRDF_database\brdfs'
+DATA_MERL = os.path.join(DATA_MERL_DIR, 'aluminium.binary')
 
 
 # ----------------------------------------------------------------------------- synthetic tables
@@ -136,6 +138,96 @@ def test_hpbrdf_loader_real():
     assert t.polarized and t.n_ch == 68 and t.slice_shape == (91, 91, 68, 4, 4)
     sl = t.slice(180); v = t.valid(sl)
     assert 0.5 < v.mean() < 1.0 and np.nanmax(t.m00(sl)) > 1
+
+
+def synthetic_material_set(n_mat=12, n_phi=12, n_thd=10, n_thh=10, rank=3, noise=0.01, seed=0):
+    """RGB tables whose log BRDF lives (up to noise) in a `rank`-dimensional affine space -> (list of (name, table), coefficients)"""
+    rng = np.random.default_rng(seed)
+    phi_d = np.linspace(0, np.pi, n_phi, endpoint=False); theta_d = np.linspace(0, np.pi / 2, n_thd, endpoint=False)
+    theta_h = (np.arange(n_thh) / n_thh) ** 2 * (np.pi / 2)
+    P, D, H = np.meshgrid(phi_d, theta_d, theta_h, indexing='ij')
+    base = np.log(0.05 + 3.0 * np.exp(-(H / 0.2) ** 2))[..., None] + np.log(np.array([1.0, 0.8, 0.6]))
+    B = np.stack([np.exp(-(H / 0.1) ** 2)[..., None] * np.array([1.0, 1.0, 1.0]),
+                  (D / (np.pi / 2))[..., None] * np.array([1.0, 0.5, 0.2]),
+                  (np.cos(P) * 0.3)[..., None] * np.array([0.2, 1.0, 0.5])])[:rank]
+    A = rng.normal(size=(n_mat, rank)) * np.array([2.0, 1.0, 0.5])[:rank]
+    mats = []
+    for i in range(n_mat):
+        x = base + np.tensordot(A[i], B, 1) + noise * rng.normal(size=base.shape)
+        v = np.exp(x).astype(np.float32); v[:, -1, -2:] = np.nan
+        mats.append((f'm{i:02d}', BRDFTable(phi_d, theta_d, theta_h, np.arange(3.0), RGB, False, dict(source='synthetic'), values=v)))
+    return mats, A
+
+
+def test_merl_pca_cos_weights():
+    """cos_i cos_o from the half/diff inverse agrees with brdfkit.geometry on the forward conversion"""
+    rng = np.random.default_rng(5)
+    pd, td, th = rng.uniform(0, np.pi, 200), rng.uniform(0, np.pi / 2, 200), rng.uniform(0, np.pi / 2, 200)
+    w = np.array([MP.cos_weights([p], [d], [h])[0, 0, 0] for p, d, h in zip(pd, td, th)])
+    d = np.stack([np.sin(td) * np.cos(pd), np.sin(td) * np.sin(pd), np.cos(td)], 1)
+    wi = np.stack([d[:, 0] * np.cos(th) + d[:, 2] * np.sin(th), d[:, 1], -d[:, 0] * np.sin(th) + d[:, 2] * np.cos(th)], 1)
+    hv = np.stack([np.sin(th), 0 * th, np.cos(th)], 1); wo = 2 * (wi * hv).sum(1, keepdims=True) * hv - wi
+    ok = (wi[:, 2] > 1e-3) & (wo[:, 2] > 1e-3)
+    assert ok.sum() > 50 and np.allclose(w[ok], wi[ok, 2] * wo[ok, 2]) and np.all(w[~ok] == 0)
+    g = G.geometry(wi[ok], wo[ok])
+    assert np.allclose(g['theta_h'], th[ok], atol=1e-6) and np.allclose(g['theta_d'], td[ok], atol=1e-6)
+
+
+def _check_material_pca(mapping):
+    mats, A = synthetic_material_set()
+    model, Xc = MP.fit(mats, stride=1, mapping=mapping, k=64, log=lambda *a: None)
+    n = len(mats)
+    assert model.coef.shape == (n, n) and model.basis.shape[1] == n - 2 and model.loo_rmse.shape == (n, n - 1)
+    assert model.evr[:3].sum() > 0.97, model.evr[:5]
+    assert np.median(model.recon_rmse[:, 3]) < 0.02 and np.median(model.loo_rmse[:, 3]) < 0.05, (model.recon_rmse[:, 3], model.loo_rmse[:, 3])
+    assert np.all(np.diff(model.recon_rmse, axis=1) <= 1e-9) and np.all(model.recon_rmse[:, n - 1] < 1e-4)
+    # the 3-d latent space is recovered: coefficients are an affine function of the generating A
+    Z = np.c_[A, np.ones(n)]; fitc = np.linalg.lstsq(Z, model.coef[:, :3], rcond=None)[0]
+    assert np.abs(Z @ fitc - model.coef[:, :3]).max() < 0.2 * np.abs(model.coef[:, :3]).max()
+    # project() of a fitted table reproduces its stored coefficients; reconstruct() reproduces the table
+    i = 4; v = mats[i][1].values
+    assert np.allclose(model.project(v, k=5), model.coef[i, :5], atol=1e-3)
+    rec = model.reconstruct(model.coef[i], k=n - 2)
+    m = model.valid
+    assert np.array_equal(np.isnan(rec).any(-1), ~m)
+    assert np.allclose(rec[m], v[m], rtol=0.05 if mapping == 'nielsen' else 0.02, atol=1e-3)
+    rec3 = model.reconstruct(model.coef[i], k=3)
+    assert np.sqrt(np.mean((np.log(rec3[m]) - np.log(v[m])) ** 2)) < 0.1
+    # save / load round trip
+    with tempfile.TemporaryDirectory() as d:
+        fn = model.save(os.path.join(d, 'm.npz')); m2 = MP.MaterialPCA.load(fn)
+        assert m2.names == model.names and m2.mapping == mapping and m2.stride == (1, 1, 1)
+        assert np.allclose(m2.project(v, k=5), model.coef[i, :5], atol=1e-3)
+        assert np.allclose(m2.reconstruct(model.coef[i], k=3)[m], rec3[m], rtol=1e-4)
+    return model
+
+
+def test_merl_pca_synthetic_log():
+    _check_material_pca('log')
+
+
+def test_merl_pca_synthetic_nielsen():
+    m = _check_material_pca('nielsen')
+    assert m.ref is not None and m.ref.shape == (m.dim,)
+
+
+def test_merl_pca_real():
+    if not os.path.isdir(DATA_MERL_DIR):
+        return 'skipped (no MERL directory)'
+    files = [os.path.join(DATA_MERL_DIR, f) for f in ('aluminium.binary', 'alum-bronze.binary', 'black-obsidian.binary',
+                                                      'beige-fabric.binary', 'gold-metallic-paint.binary')]
+    files = [f for f in files if os.path.exists(f)]
+    if len(files) < 4:
+        return 'skipped (too few MERL files)'
+    with tempfile.TemporaryDirectory() as d:
+        model = MP.run_report(files, d, stride=6, k=2, plot=False, log=lambda *a: None)
+        assert os.path.exists(os.path.join(d, 'merl_pca.npz')) and os.path.exists(os.path.join(d, 'merl_pca_report.txt'))
+        assert model.grid_shape == (30, 15, 15) and model.dim == model.valid.sum() * 3 and 0.6 < model.valid.mean() < 0.9
+        assert model.evr[0] > 0.3 and np.all(model.recon_rmse[:, len(files) - 1] < 1e-3)
+        from brdfkit.io import merl
+        i = model.names.index('aluminium')                                       # run_report sorts materials by name
+        assert np.allclose(model.project(merl.load(files[0]).values), model.coef[i, :2], atol=1e-2)
+    return f'{len(files)} materials, evr1 {model.evr[0]:.2f}'
 
 
 def test_merl_loader_real():

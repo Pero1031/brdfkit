@@ -11,6 +11,7 @@
 | PCA 圧縮 | `brdfkit compress` / `eval` | 角度ビンごとの潜在ベクトル（hpBRDF: 13 GB → 231 MB、MERL: 10 MB）。[docs/PCA.md](docs/PCA.md) |
 | レンダラー向け書き出し | `brdfkit export` | `.hpbpca` v2。C++17 のヘッダ 1 枚 [`cpp/hpbrdf_pca.hpp`](cpp/hpbrdf_pca.hpp) で読み込みから復号まで |
 | 偏光分析 | `brdfkit lu-chipman` | Lu–Chipman 分解（二色性・位相差・偏光解消）と Fresnel / 薄膜モデルとの比較。[docs/LU_CHIPMAN.md](docs/LU_CHIPMAN.md) |
+| 材質間 PCA | `brdfkit merl-pca` | MERL 100 材質を並べた Matusik 2003 流の PCA。共通基底、材質の分布、leave-one-out の汎化誤差。[docs/MERL_PCA.md](docs/MERL_PCA.md) |
 | GoLD_rayt 連携 | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` 実装と組み込み手順 |
 
 ## 使い方
@@ -24,6 +25,7 @@ python -m brdfkit compress data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pc
 python -m brdfkit eval     data/kaist/hpbrdf/Aluminum.hpbrdf out/pca/Aluminum_pca.npz --sweep
 python -m brdfkit export   out/pca/Aluminum_pca.npz out/pca/Aluminum.hpbpca
 python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml --out out/analysis
+python -m brdfkit merl-pca   D:\Jack_spallow\MERL_BRDF_database\brdfs --out out/merl_analysis/log
 ```
 
 Python から:
@@ -41,11 +43,11 @@ r = dec.eval(to_light, to_view, 550.0)          # m00（f_r、コサイン項な
 
 ```
 brdfkit/         パッケージ: table（共通表現）、io/（loaders）、geometry（Rusinkiewicz 座標、Stokes 基底）、
-                 compress/pca、decode（参照復号器）、export/hpbpca、analysis/lu_chipman、cli
+                 compress/pca、decode（参照復号器）、export/hpbpca、analysis/{lu_chipman, merl_pca}、cli
 cpp/             C++ 復号器の本籍（hpbrdf_pca.hpp）と Python との一致確認ドライバ
 integrations/    gold_rayt/: GoLD_rayt 用 Material、組み込み手順、ビルド確認
 tests/           合成 BRDF での自己検証（pytest 不要: python tests/run_tests.py）
-docs/            PCA.md、LU_CHIPMAN.md
+docs/            PCA.md、LU_CHIPMAN.md、MERL_PCA.md
 data/, out/      データセットと派生物。git 対象外
 ```
 
