@@ -23,6 +23,7 @@ from brdfkit import color                                      # noqa: E402
 from brdfkit.analysis import merl_subsets as MS                # noqa: E402
 from brdfkit.analysis import floor as FL                       # noqa: E402
 from brdfkit.analysis import factor as FA                      # noqa: E402
+from brdfkit.analysis import latent_edit as LE                 # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -484,3 +485,40 @@ def test_factor_measured_range():
     assert np.allclose(m['S'][:lo], m['S'][lo]) and np.allclose(m['S'][hi + 1:], m['S'][hi]) and np.allclose(m['N'][:lo], m['N'][lo])
     e = m['errors']['m00_rel_rmse']
     assert e['measured_theta_d']['all'] < 0.012 and e['all_theta_d']['all'] > 1.5 * e['measured_theta_d']['all']   # copied rows miss the true S
+
+
+def _edit_setup():
+    """small log PCA of synthetic RGB materials, and a factor model whose grid contains the PCA grid (phi_d over [-180, 180])"""
+    mats, _ = synthetic_material_set()
+    pca, _ = MP.fit(mats, stride=1, mapping='log', k=8, log=lambda *a: None)
+    phi = np.radians(np.arange(-180, 181, 15.0)); td = pca.theta_d; th = pca.theta_h
+    P, D, Hh = np.meshgrid(phi, td, th, indexing='ij')
+    A = (0.05 + 3.0 * np.exp(-(Hh / 0.2) ** 2)).astype(np.float32)
+    S = np.ones((len(td), 3)); N = np.zeros((len(td), 3, 15))
+    m = dict(kind=FA.KIND, A=A, S=S, N=N, phi_d=phi, theta_d=td, theta_h=th, channels=np.array([450.0, 550.0, 650.0]),
+             measured_theta_d=np.array([0.0, 90.0]), smooth_deg=0.0, errors={}, meta={})
+    return pca, m
+
+
+def test_latent_edit():
+    """no shift = no change; a shift along one component multiplies A by exp(that component) at the PCA grid points;
+    keep_albedo restores the albedo; the grey A projects close to the base material of the synthetic set"""
+    pca, m = _edit_setup()
+    same, info = LE.edit(m, pca)
+    assert np.allclose(same['A'], m['A']) and len(info['z']) == 8
+    e, info = LE.edit(m, pca, pcs=[(2, 1.0)])
+    sig = pca.coef[:, :8].std(0)
+    expect = (pca.basis[:, 1] * sig[1]).reshape(-1, 3).mean(1)
+    j15 = int(np.argmin(np.abs(m['phi_d'] - pca.phi_d[1])))                    # phi_d grid point of the PCA inside A's grid
+    got = np.log(e['A'][j15] / m['A'][j15])
+    v = pca.valid[1]
+    full = np.zeros(pca.grid_shape); full[pca.valid] = expect
+    assert np.allclose(got[v], full[1][v], atol=1e-4)
+    k, _ = LE.edit(m, pca, pcs=[(1, 1.5)], keep_albedo_deg=30)
+    assert abs(LE.albedo(k, 30) - LE.albedo(m, 30)) < 1e-6 * max(1, LE.albedo(m, 30))
+    t0, _ = LE.edit(m, pca, toward=[(pca.names[3], 0.0)])
+    assert np.allclose(t0['A'], m['A'])
+    try:
+        LE.edit(m, pca, pcs=[(9, 1.0)]); raise AssertionError('component outside k accepted')
+    except ValueError:
+        pass

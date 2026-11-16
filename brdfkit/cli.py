@@ -5,6 +5,7 @@ brdfkit command line.
   brdfkit compress  TABLE OUT.npz [--k1 8] [--k2 32] [--dtype float16] [--step 1] [--floor FLOOR.npz] [--floor-keep 0.02] [--floor-max-gain 4]
   brdfkit eval      TABLE OUT.npz [--slices 0,30,60] [--sweep] [--floor FLOOR.npz] [--floor-keep 0.02] [--floor-max-gain 4]
   brdfkit floor     TABLE --out FLOOR.npz [--phi-step 12] [--theta-h-min 40] [--theta-d 25,75] [--stat p50]
+  brdfkit edit      MODEL.npz --model MERL_PCA.npz --out EDITED.npz [--pc 1:-0.5 ...] [--toward nickel:0.5 ...] [--k 16] [--keep-albedo 45]
   brdfkit factor    TABLE --out MODEL.npz [--smooth 0,5] [--measured 20,80] [--floor FLOOR.npz]   (A x S x N model; TABLE may then be MODEL.npz)
   brdfkit export    OUT.npz OUT.hpbpca [--dtype float16]
   brdfkit lu-chipman OUT.npz --refidx Al_Rakic.yml [Al_McPeak.yml ...] --out DIR [--raw TABLE] [--n-film 1.65]
@@ -53,6 +54,11 @@ def main(argv=None):
     p = sub.add_parser('factor', help='fit m00 = A(angles) S(theta_d, lambda), m_ij/m00 = N(theta_d, lambda)'); p.add_argument('table')
     p.add_argument('--out', required=True); p.add_argument('--smooth', default='0', help='smoothing widths of S over theta_d [deg], comma separated')
     p.add_argument('--measured', default='20,80', help='measured theta_d range [deg]; S and N are extended from its edges'); _floor_args(p)
+    p = sub.add_parser('edit', help='move the grey lobe A of a factor model along a MERL PCA (log mapping)'); p.add_argument('factor')
+    p.add_argument('--model', required=True, help='merl_pca.npz (log mapping)'); p.add_argument('--out', required=True)
+    p.add_argument('--pc', action='append', default=[], help='COMPONENT:T, shift by T times the spread of the PCA materials (repeatable)')
+    p.add_argument('--toward', action='append', default=[], help='MATERIAL:T, move the fraction T of the way to that material (repeatable)')
+    p.add_argument('--k', type=int, default=16); p.add_argument('--keep-albedo', type=float, default=None, help='rescale to keep the albedo at this angle of incidence [deg]')
     p = sub.add_parser('merl-pca', help='inter-material PCA of a set of MERL tables'); p.add_argument('paths', nargs='+')
     p.add_argument('--out', required=True); p.add_argument('--stride', default='2', help='grid stride, one int or phi_d,theta_d,theta_h')
     p.add_argument('--k', type=int, default=16, help='components kept in the basis'); p.add_argument('--mapping', choices=('log', 'nielsen'), default='log')
@@ -100,6 +106,13 @@ def main(argv=None):
         for m in models:
             path = a.out if len(models) == 1 else f'{base}_s{m["smooth_deg"]:g}.npz'
             F.save(path, m); F.report(m); print('wrote', path)
+    elif a.cmd == 'edit':
+        from .analysis import factor as F, latent_edit as LE
+        from .analysis.merl_pca import MaterialPCA
+        pcs = [(int(x.split(':')[0]), float(x.split(':')[1])) for x in a.pc]
+        tw = [(x.rsplit(':', 1)[0], float(x.rsplit(':', 1)[1])) for x in a.toward]
+        m, info = LE.edit(F.load(a.factor), MaterialPCA.load(a.model), pcs, tw, a.k, a.keep_albedo)
+        F.save(a.out, m); LE.report(info); print('wrote', a.out)
     elif a.cmd == 'lu-chipman':
         from .analysis.lu_chipman import run_report
         run_report(a.npz, [(p, os.path.splitext(os.path.basename(p))[0]) for p in a.refidx], a.out, raw=a.raw, n_film=a.n_film)

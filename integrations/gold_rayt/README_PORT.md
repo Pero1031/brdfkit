@@ -3,8 +3,8 @@
 The KAIST/POSTECH hpBRDF (measured spectral, polarimetric BRDF; 13 GB per material) is PCA-compressed to 231 MB and wrapped
 as a GoLD_rayt `Material` with evaluation, sampling and polarization (`scatterMueller`).
 It was written against GoLD_rayt's own code, following its API and conventions, and was built, linked and run against
-GoLD_rayt's headers and `GGX.cpp` (`test/build_check.bat`, both the RGB and the spectral build). Rendering inside GoLD_rayt
-itself has not been done here yet. The steps are in [PATCH_NOTES.md](PATCH_NOTES.md).
+GoLD_rayt's headers and `GGX.cpp` (`test/build_check.bat`, both the RGB and the spectral build), and has since been used to
+render the comparisons in [docs/FLOOR.md](../../docs/FLOOR.md) and [docs/LATENT_EDIT.md](../../docs/LATENT_EDIT.md) with the spectral build. The steps are in [PATCH_NOTES.md](PATCH_NOTES.md).
 
 ## Contents
 
