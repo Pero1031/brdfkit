@@ -2,12 +2,14 @@
 brdfkit command line.
 
   brdfkit info      TABLE
-  brdfkit compress  TABLE OUT.npz [--k1 8] [--k2 32] [--dtype float16] [--step 1]
-  brdfkit eval      TABLE OUT.npz [--slices 0,30,60] [--sweep]
+  brdfkit compress  TABLE OUT.npz [--k1 8] [--k2 32] [--dtype float16] [--step 1] [--floor FLOOR.npz] [--floor-keep 0.02] [--floor-max-gain 4]
+  brdfkit eval      TABLE OUT.npz [--slices 0,30,60] [--sweep] [--floor FLOOR.npz] [--floor-keep 0.02] [--floor-max-gain 4]
+  brdfkit floor     TABLE --out FLOOR.npz [--phi-step 12] [--theta-h-min 40] [--theta-d 25,75] [--stat p50]
   brdfkit export    OUT.npz OUT.hpbpca [--dtype float16]
   brdfkit lu-chipman OUT.npz --refidx Al_Rakic.yml [Al_McPeak.yml ...] --out DIR [--raw TABLE] [--n-film 1.65]
   brdfkit merl-pca  DIR_OR_FILES... --out DIR [--stride 2] [--k 16] [--mapping log|nielsen] [--eps E] [--no-plot]
   brdfkit merl-project TABLE --model MERL_PCA.npz [MERL_PCA.npz ...] --out DIR [--k 16] [--sym full|none] [--reference MERL.binary] [--recompute] [--no-plot]
+                    [--floor FLOOR.npz] [--floor-keep 0.02]
   brdfkit merl-subsets MERL_GRID.npz MERL_DIR --out DIR [--all-model MERL_PCA.npz] [--random 30] [--seed 0] [--ablate]
   brdfkit merl-compare RUN_DIR [RUN_DIR ...]      (summary of several merl-project outputs)
 
@@ -17,6 +19,19 @@ import argparse
 import os
 
 
+def _floor_args(p):
+    p.add_argument('--floor', default=None, help='floor file of `brdfkit floor` (e.g. measured on black glass) to subtract from m00')
+    p.add_argument('--floor-keep', type=float, default=0.02, help='never take m00 below this fraction of its measured value')
+    p.add_argument('--floor-max-gain', type=float, default=4.0, help='cap on the rise of m_ij/m00 caused by the subtraction (0 = no cap)')
+
+
+def _with_floor(table, a):
+    if not a.floor:
+        return table
+    from .analysis import floor as FL
+    return FL.subtract(table, a.floor, a.floor_keep, a.floor_max_gain or None)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='brdfkit', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -24,8 +39,13 @@ def main(argv=None):
     p = sub.add_parser('compress'); p.add_argument('table'); p.add_argument('output')
     p.add_argument('--k1', type=int, default=8); p.add_argument('--k2', type=int, default=32)
     p.add_argument('--dtype', default='float16'); p.add_argument('--step', type=int, default=1, help='phi_d stride of the covariance pass')
+    _floor_args(p)
     p = sub.add_parser('eval'); p.add_argument('table'); p.add_argument('npz')
     p.add_argument('--slices', default=''); p.add_argument('--sweep', action='store_true')
+    _floor_args(p)
+    p = sub.add_parser('floor', help='estimate the instrument floor (unpolarized offset) far from the specular lobe'); p.add_argument('table')
+    p.add_argument('--out', required=True); p.add_argument('--phi-step', type=int, default=12); p.add_argument('--theta-h-min', type=float, default=40.0)
+    p.add_argument('--theta-d', default='25,75', help='measured theta_d range in degrees'); p.add_argument('--stat', choices=('p10', 'p25', 'p50', 'p90'), default='p50')
     p = sub.add_parser('export'); p.add_argument('npz'); p.add_argument('output'); p.add_argument('--dtype', default='float16')
     p = sub.add_parser('lu-chipman'); p.add_argument('npz'); p.add_argument('--refidx', nargs='+', required=True)
     p.add_argument('--out', required=True); p.add_argument('--raw', default=None); p.add_argument('--n-film', type=float, default=1.65)
@@ -37,7 +57,7 @@ def main(argv=None):
     p.add_argument('--model', nargs='+', required=True, help='merl_pca.npz written by merl-pca'); p.add_argument('--out', required=True)
     p.add_argument('--k', type=int, default=16); p.add_argument('--sym', choices=('full', 'none'), default='full', help='average the phi_d-equivalent slices (full) or not')
     p.add_argument('--reference', default=None, help='MERL .binary of a comparison material'); p.add_argument('--recompute', action='store_true')
-    p.add_argument('--no-plot', action='store_true')
+    p.add_argument('--no-plot', action='store_true'); _floor_args(p)
     p = sub.add_parser('merl-subsets', help='metal-only versus all-material PCA basis for a table on the MERL grid')
     p.add_argument('grid', help='<out>/<name>_merl_grid_full.npz written by merl-project'); p.add_argument('merl_dir'); p.add_argument('--out', required=True)
     p.add_argument('--all-model', default=None, help='saved 100-material merl_pca.npz (log), for leave-one-out numbers')
@@ -52,12 +72,18 @@ def main(argv=None):
     elif a.cmd == 'compress':
         from .io import load
         from .compress import compress
-        compress(load(a.table), a.output, a.k1, a.k2, a.dtype, a.step)
+        compress(_with_floor(load(a.table), a), a.output, a.k1, a.k2, a.dtype, a.step)
     elif a.cmd == 'eval':
         from .io import load
         from .compress import evaluate
         slices = [int(s) for s in a.slices.split(',')] if a.slices else None
-        evaluate(load(a.table), a.npz, slices, a.sweep)
+        evaluate(_with_floor(load(a.table), a), a.npz, slices, a.sweep)
+    elif a.cmd == 'floor':
+        from .io import load
+        from .analysis import floor as FL
+        td = [float(s) for s in a.theta_d.split(',')]
+        fl = FL.estimate(load(a.table), a.phi_step, a.theta_h_min, (td[0], td[1]), a.stat)
+        FL.save(a.out, fl); FL.report(fl); print('wrote', a.out)
     elif a.cmd == 'export':
         from .export import write
         write(a.npz, a.output, a.dtype)
@@ -70,7 +96,7 @@ def main(argv=None):
         run_report(a.paths, a.out, stride[0] if len(stride) == 1 else stride, a.k, a.mapping, a.eps, plot=not a.no_plot)
     elif a.cmd == 'merl-project':
         from .analysis.merl_project import run_report
-        run_report(a.table, a.model, a.out, a.k, a.sym, a.reference, a.recompute, plot=not a.no_plot)
+        run_report(a.table, a.model, a.out, a.k, a.sym, a.reference, a.recompute, plot=not a.no_plot, floor=a.floor, floor_keep=a.floor_keep)
     elif a.cmd == 'merl-subsets':
         from .analysis.merl_subsets import run_study
         run_study(a.grid, a.merl_dir, a.out, a.all_model, a.random, a.seed, a.ablate)

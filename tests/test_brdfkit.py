@@ -21,6 +21,8 @@ from brdfkit.analysis import merl_pca as MP                    # noqa: E402
 from brdfkit.analysis import merl_project as MJ                # noqa: E402
 from brdfkit import color                                      # noqa: E402
 from brdfkit.analysis import merl_subsets as MS                # noqa: E402
+from brdfkit.analysis import floor as FL                       # noqa: E402
+from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
 DATA_HPBRDF = os.environ.get('BRDFKIT_HPBRDF', os.path.join(ROOT, 'data', 'kaist', 'hpbrdf', 'Aluminum.hpbrdf'))
@@ -375,3 +377,63 @@ def test_grid_stats():
     assert st['peak_max'] == 50.0 and st['peak_core'] == 10.0 and abs(st['flat_ratio'] - 1.0) < 1e-6 and abs(st['floor'] - 0.002) < 1e-9
     v[:, :, :, 1] = np.maximum(10.0 * np.exp(-th / 3.0), 0.01)[None, None, :]
     assert MJ.grid_stats(v)['flat_ratio'] < 0.2
+
+
+def _floored_table():
+    """black-glass-like polarized table: a narrow lobe that is zero far away, plus an unpolarized offset c(lambda) on m00"""
+    phi_d = np.linspace(-np.pi, np.pi, 13); theta_d = np.radians(np.arange(0, 90, 5.0)); theta_h = (np.arange(30) / 30) ** 2 * (np.pi / 2)
+    wv = np.array([450.0, 550.0, 650.0]); c = np.array([0.02, 0.006, 0.004])
+    P, D, Hh = np.meshgrid(phi_d, theta_d, theta_h, indexing='ij')
+    true = 5.0 * np.exp(-(Hh / 0.05) ** 2)[..., None] * np.ones(3)                          # [P, D, H, C]
+    M = np.zeros(true.shape + (4, 4), np.float32)
+    for k, d in enumerate((1.0, 0.9, -0.9, -0.9)):
+        M[..., k, k] = true * d
+    M[..., 0, 0] += c
+    return BRDFTable(phi_d, theta_d, theta_h, wv, WAVELENGTH, True, dict(source='synthetic'), values=M), true, c
+
+
+def test_floor_estimate_subtract():
+    """the floor is estimated far from the lobe, is unpolarized, and subtracting it restores m00 (clamped where it would vanish)"""
+    t, true, c = _floored_table()
+    fl = FL.estimate(t, phi_step=1, log=lambda *a: None)
+    assert np.allclose(fl['offset'], c, rtol=1e-4) and fl['norm_absmed'][:, 1:, 1:].max() < 1e-6
+    s = FL.subtract(t, fl)
+    m = s.values[..., 0, 0]
+    big = true > 10 * c
+    assert np.allclose(m[big], true[big], rtol=1e-4)                                          # lobe: offset removed
+    far = true < 1e-12
+    assert np.allclose(m[far], (FL.KEEP * c * np.ones_like(true))[far], rtol=1e-4)            # far: clamped at keep * measured
+    assert np.allclose(s.values[big][..., 1:, :], t.values[big][..., 1:, :])                 # in the lobe only m00 changes
+    row = np.sqrt((s.values[..., 0, 1:] ** 2).sum(-1)); assert (m >= row - 1e-7).all()        # diattenuation stays <= 1
+    raw = FL.subtract(t, fl, max_gain=None)
+    assert np.allclose(raw.values[..., 0, 0], m) and np.array_equal(raw.values[..., 1:, :], t.values[..., 1:, :])
+    x = t.values.copy(); x[..., 1, 1] = 0.5 * x[..., 0, 0]                                     # weak signal under the offset
+    tx = BRDFTable(t.phi_d, t.theta_d, t.theta_h, t.channels, WAVELENGTH, True, {}, values=x)
+    g = FL.subtract(tx, fl, max_gain=4.0).values
+    with np.errstate(all='ignore'):
+        rise = (g[..., 1, 1] / g[..., 0, 0]) / (x[..., 1, 1] / x[..., 0, 0])
+    assert np.nanmax(rise) <= 4.0 + 1e-4 and np.nanmax(np.abs(g[..., 1, 1] / g[..., 0, 0])) <= 1 + 1e-6
+    assert np.allclose(g[big][..., 0, 0], true[big], rtol=1e-4)                               # the lobe is untouched by the cap
+    lazy = FL.subtract(BRDFTable(t.phi_d, t.theta_d, t.theta_h, t.channels, WAVELENGTH, True, {}, slice_fn=lambda i: t.values[i]), fl)
+    assert np.allclose(lazy.slice(3), s.values[3])
+    bad = dict(fl, channels=np.array([400.0, 500.0, 600.0]))
+    try:
+        FL.subtract(t, bad); raise AssertionError('channel mismatch not detected')
+    except ValueError:
+        pass
+    with tempfile.TemporaryDirectory() as d:
+        FL.save(os.path.join(d, 'f.npz'), fl)
+        assert np.allclose(FL.subtract(t, os.path.join(d, 'f.npz')).values, s.values)
+
+
+def test_floor_rgb():
+    """floor removal on a MERL-grid RGB table: subtract the offset taken to RGB, clamp at keep * value, keep NaN"""
+    v = np.full((180, 90, 90, 3), 0.01, np.float32); v[:, :, :5] = 3.0; v[0, 0, 0] = np.nan
+    t = BRDFTable(*merl_grid_axes(), np.arange(3.0), RGB, False, {}, values=v)
+    fl = dict(offset=np.array([0.008, 0.009, 0.0095]), channels=np.arange(3.0), channel_kind=RGB)
+    r = MJ.floor_rgb(t, fl).values
+    assert np.isnan(r[0, 0, 0]).all() and np.allclose(r[1, 1, 1], 3.0 - fl['offset'])
+    assert np.allclose(r[1, 1, 50], 0.01 - fl['offset'], atol=1e-7)
+    v[:, :, 50:] = 0.005
+    r = MJ.floor_rgb(t, fl, keep=0.02).values
+    assert np.allclose(r[1, 1, 60], 0.0001)

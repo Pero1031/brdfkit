@@ -115,6 +115,18 @@ def cached_grid(source, cache, sym='full', recompute=False, log=print):
     return t, info
 
 
+def floor_rgb(table, fl, keep=0.02):
+    """MERL-grid RGB table with the instrument floor `fl` (see brdfkit.analysis.floor) removed: the per-wavelength offset is
+    taken to RGB with the same band weights as the table, then subtracted with the same clamp (at least keep * value).
+    Because the RGB weighting is linear this equals subtracting per wavelength before the weighting, except where the clamp acts."""
+    off = np.asarray(fl['offset'], np.float64)
+    off_rgb = off @ rgb_band_weights(np.asarray(fl['channels'], float)) if str(fl['channel_kind']) == WAVELENGTH else off
+    v = table.values.astype(np.float64)
+    out = np.where(np.isfinite(v), np.maximum(v - off_rgb, keep * v), v).astype(np.float32)
+    meta = dict(table.meta, floor_offset_rgb=[round(float(x), 6) for x in off_rgb], floor_keep=keep)
+    return BRDFTable(table.phi_d, table.theta_d, table.theta_h, table.channels, table.channel_kind, False, meta, values=out)
+
+
 # ----------------------------------------------------------------------------- projection
 def linear_rel_rmse(model, values, coef, k):
     """relative RMSE of the cos-weighted linear BRDF f cos_i cos_o between `values` and its k-component reconstruction,
@@ -300,20 +312,31 @@ def _plots(model, res, table, reference, source, out_dir, tag):
 
 
 # ----------------------------------------------------------------------------- driver
-def run_report(source, model_paths, out_dir, k=16, sym='full', reference=None, recompute=False, plot=True, log=print):
+def run_report(source, model_paths, out_dir, k=16, sym='full', reference=None, recompute=False, plot=True, log=print, floor=None,
+               floor_keep=None):
     """source: hpBRDF-like table file; model_paths: saved MaterialPCA .npz files (one report each); reference: MERL .binary of the
     comparison material (e.g. data/merl/aluminium.binary). Writes <out_dir>/<mapping>/{report.txt, projection.json, *.png}
-    and the MERL-grid RGB table <out_dir>/<name>_merl_grid_<sym>.npz (reused on the next run)."""
+    and the MERL-grid RGB table <out_dir>/<name>_merl_grid_<sym>.npz (reused on the next run).
+    floor: floor file of `brdfkit floor` (or its dict); its offset is removed from the grid in RGB (`floor_rgb`) and the
+    reports go to <out_dir>/<mapping>_floor instead, so both versions can share one cached grid."""
     from ..io import load
     os.makedirs(out_dir, exist_ok=True)
     name = os.path.splitext(os.path.basename(source))[0]
     table, ginfo = cached_grid(source, os.path.join(out_dir, f'{name}_merl_grid_{sym}.npz'), sym, recompute, log)
+    tag, floor_info = '', None
+    if floor is not None:
+        from . import floor as FL
+        fl = FL.load(floor) if isinstance(floor, str) else floor
+        table = floor_rgb(table, fl, FL.KEEP if floor_keep is None else floor_keep)
+        tag = '_floor'
+        floor_info = dict(file=floor if isinstance(floor, str) else str(fl.get('source', '')), offset_rgb=table.meta['floor_offset_rgb'])
+        log(f'floor removed in RGB: offset {table.meta["floor_offset_rgb"]}')
     ref = load(reference) if reference else None
     ref_name = os.path.splitext(os.path.basename(reference))[0] if reference else None
     summary = {}
     for mp in model_paths:
         model = MaterialPCA.load(mp)
-        sub = os.path.join(out_dir, model.mapping); os.makedirs(sub, exist_ok=True)
+        sub = os.path.join(out_dir, model.mapping + tag); os.makedirs(sub, exist_ok=True)
         res = analyse(model, table, k, ref, ref_name)
         lines = []
 
@@ -325,6 +348,8 @@ def run_report(source, model_paths, out_dir, k=16, sym='full', reference=None, r
         js = dict(source=source, model=mp, mapping=model.mapping, k=res['k'], sym=sym, coef=res['coef'].tolist(), info=res['info'],
                   ks=res['ks'], rmse_k=res['rmse_k'], linear_rel_rmse_k=res['lin_k'],
                   nearest=[dict(name=model.names[i], dist=float(res['dist'][i])) for i in np.argsort(res['dist'])[:10]])
+        if floor_info:
+            js['floor'] = floor_info
         if 'ref' in res:
             r = res['ref']
             js['reference'] = dict(name=r['name'], in_fit=r['in_fit'], coef=r['coef'].tolist(), raw_rmse=r['raw_rmse'], pca_dist=r['pca_dist'],
@@ -358,8 +383,12 @@ def compare_runs(run_dirs, say=print):
         st, sp = grid_stats(t.values), info['spread'][np.isfinite(info['spread'])]
         say(f'\n== {name}: max {st["peak_max"]:.2f}, f(theta_h = 0) {st["peak_core"]:.2f} at phi_d 90, theta_d 30 deg, flat-top ratio {st["flat_ratio"]:.3f}, '
             f'floor {st["floor"]:.4f}, phi_d spread median {np.median(sp):.3f}')
-        for mapping in ('log', 'nielsen'):
-            pj = json.load(open(os.path.join(d, mapping, 'projection.json')))
+        for pjf in sorted(glob.glob(os.path.join(d, '*', 'projection.json'))):
+            mapping = os.path.basename(os.path.dirname(pjf))
+            pj = json.load(open(pjf))
+            if 'floor' in pj:
+                tf = floor_rgb(t, dict(offset=pj['floor']['offset_rgb'], channels=np.arange(3.0), channel_kind=RGB))
+                say(f'  [{mapping}] after the floor: floor {grid_stats(tf.values)["floor"]:.4f} (offset RGB {pj["floor"]["offset_rgb"]})')
             model = MaterialPCA.load(pj['model'])
             c = np.array(pj['coef']); z = c / model.coef[:, :len(c)].std(0)
             ref = pj.get('reference', {})

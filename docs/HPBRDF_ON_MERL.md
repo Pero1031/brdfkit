@@ -156,6 +156,8 @@ For comparison the MERL materials at the same place: black-obsidian f(0) = 43.7 
   diffuse scattering at that level, so a floor of about 0.007 is probably an instrument floor (stray light or noise); only the aluminium is higher (0.014), possibly real scattering.
   This floor is also why hpBRDF tables look about 3 times brighter than MERL in the median ln ratio (×3.1 for the glass, ×3.3 for the steel against steel, ×3.5 for the aluminium):
   most bins are far from the lobe. A constant 0.007 adds about 2% to the albedo (π × 0.007).
+  [FLOOR.md](FLOOR.md) confirms the instrument offset (same spectrum in all four materials, no polarization structure),
+  removes it (`--floor`), and repeats this projection: black glass then lands next to black-obsidian.
 - **Dark materials are dominated by the floor in the log mapping.** The black glass is the 100th of 100 by distance to the MERL obsidian in the log model (21st in nielsen), because ln(0.006 / 1e-4) is a
   large constant over most of the hemisphere. Distances of dark materials in the log model say more about the floor than about the lobe shapes.
 - **Fake gold is the worst represented** (0.51 log, 0.37 nielsen) and lands next to green and violet acrylic rather than gold paints. Its colour (median ratio to MERL two-layer-gold

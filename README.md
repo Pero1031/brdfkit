@@ -16,6 +16,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Polarimetric analysis | `brdfkit lu-chipman` | Lu–Chipman decomposition (diattenuation, retardance, depolarization) compared with Fresnel and thin-film models. [docs/LU_CHIPMAN.md](docs/LU_CHIPMAN.md) |
 | Inter-material PCA | `brdfkit merl-pca` | Matusik 2003-style PCA across the 100 MERL materials: common basis, material distribution, leave-one-out generalization error. [docs/MERL_PCA.md](docs/MERL_PCA.md) |
 | Projection onto MERL PCA | `brdfkit merl-project` | Place a measured table (hpBRDF aluminium) in the MERL principal-component space: coefficients, residual, nearest materials. [docs/HPBRDF_ON_MERL.md](docs/HPBRDF_ON_MERL.md) |
+| Instrument floor | `brdfkit floor`, `--floor` | Estimate the unpolarized offset that hpBRDF tables carry far from the lobe (on black glass) and remove it in `compress`, `eval`, `merl-project`. [docs/FLOOR.md](docs/FLOOR.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
 ## Usage
@@ -52,11 +53,12 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project}, color, cli
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor},
+                 color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md
+docs/            PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md
 data/, out/      datasets and derived files; not tracked by git
 ```
 
