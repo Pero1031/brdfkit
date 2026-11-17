@@ -43,18 +43,24 @@ python -m brdfkit export   out/latent/al_pc1_-1_pca.npz out/latent/al_pc1_-1.hpb
 
 z of the aluminium lobe (floor removed, in units of the MERL spread): PC1 −0.5, PC2 −1.1, PC3 −1.5, …, PC7 −7.6.
 The components, as read from the MERL analysis ([MERL_PCA.md](MERL_PCA.md)): PC1 specular versus diffuse, PC2 brightness,
-PC3 lobe width. Shifts tried, lobe symmetrized (median), albedo at 45° kept (lobe half width: the first θ_h bin where A is
-below half its peak at φ_d = 90°, θ_d = 30°; aluminium itself: 1.9°, peak 18):
+PC3 lobe width. Shifts tried, lobe symmetrized (median), albedo at 45° kept (half width: hwhm of the φ_d-averaged
+microfacet distribution D at θ_d = 30°, measured from its maximum outward as in [GLOSS.md](GLOSS.md); centre: D at θ_h = 0
+over its maximum; peak: A at φ_d = 90°, θ_d = 30°):
 
-| Shift | Half width | Peak | Albedo 0° / 75° | Nearest MERL materials after the shift |
-|---|---|---|---|---|
-| PC1 −1 | 0.28° | 181 | 0.31 / 0.06 | aluminium, nickel, blue-metallic-paint2 |
-| PC1 −0.5 | 0.71° | 63 | 0.33 / 0.06 | nickel, aluminium, gold-metallic-paint3 |
-| (aluminium) | 1.9° | 18 | 0.35 / 0.08 | two-layer-gold, gold-metallic-paint3, gold-metallic-paint2 |
-| PC1 +0.5 | 3.6° | 4.6 | 0.37 / 0.10 | two-layer-gold, silver-metallic-paint, silver-paint |
-| PC1 +1 | 6.4° | 0.9 | 0.39 / 0.14 | silver-paint, silver-metallic-paint2, pearl-paint |
-| PC3 −1.5 | 4.4° | 3.1 | 0.32 / 0.06 | nickel, two-layer-gold, gold-metallic-paint3 |
-| PC3 +1.5 | 0.28° | 87 | 0.38 / 0.12 | violet-acrylic, pink-jasper, gold-metallic-paint3 |
+| Shift | Half width | Centre | Peak | Albedo 0° / 75° | Nearest MERL materials after the shift |
+|---|---|---|---|---|---|
+| PC1 −1 | 0.23° | 1 | 181 | 0.31 / 0.06 | aluminium, nickel, blue-metallic-paint2 |
+| PC1 −0.5 | 0.60° | 1 | 63 | 0.33 / 0.06 | nickel, aluminium, gold-metallic-paint3 |
+| (aluminium) | 1.80° | 1 | 18 | 0.35 / 0.08 | two-layer-gold, gold-metallic-paint3, gold-metallic-paint2 |
+| PC1 +0.5 | 2.47° | 0.53 | 4.6 | 0.37 / 0.10 | two-layer-gold, silver-metallic-paint, silver-paint |
+| PC1 +1 | 2.98° | 0.21 | 0.9 | 0.39 / 0.14 | silver-paint, silver-metallic-paint2, pearl-paint |
+| PC3 −1.5 | 2.55° | 0.26 | 3.1 | 0.32 / 0.06 | nickel, two-layer-gold, gold-metallic-paint3 |
+| PC3 +1.5 | 0.20° | 1 | 87 | 0.38 / 0.12 | violet-acrylic, pink-jasper, gold-metallic-paint3 |
+
+(An earlier version of this table gave larger half widths for the widened lobes, 3.6° to 6.4°, from a cruder measure.)
+The widening shifts dig a hole in the centre of the lobe: its maximum moves to a ring (θ_h 1.1° at PC1 +0.5, 1.6° at
++1), which a point light shows as a ring-shaped highlight. The narrowing shifts go five to six times below the
+instrument's resolution (black glass: 1.15°). For the width alone, `brdfkit gloss` is the better knob ([GLOSS.md](GLOSS.md)).
 
 Without the symmetrization (`--sym none`) the half widths and peaks are the same within 5%, and the albedo at 75° is
 0.01–0.03 higher: the arms removed by the median carry a little energy, mostly toward grazing.
@@ -76,7 +82,8 @@ the dataset does not contain.
   ([CALIBRATION.md](CALIBRATION.md)). The coefficient on PC2 (brightness), the nearest materials and `--toward` compare
   absolute levels; `--pc` with `--keep-albedo` does not.
 - The hpBRDF peak is flattened by the measurement's angular resolution ([FLOOR.md](FLOOR.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md));
-  sharpening edits sharpen that flattened peak, they do not recover detail that was not measured.
+  sharpening edits sharpen that flattened peak, they do not recover detail that was not measured. Widening edits turn the
+  flat peak into a ring (above). The lobes are the instrument's response convolved with the surface ([GLOSS.md](GLOSS.md)).
 
 ## The streak: a one-sided arm of the measured lobe
 

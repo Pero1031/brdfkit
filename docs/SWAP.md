@@ -100,4 +100,6 @@ only what a polarization camera, a polarizing filter or a second reflection sees
   and up to about 0.18 in diattenuation at low θ_d); a Fresnel source (`--nk`) avoids them, at the cost of the measured
   detail (for example the oxide film of the real aluminium).
 - A roughened or sharpened material keeps its source's polarization. In reality roughness also changes the
-  depolarization ([LATENT_EDIT.md](LATENT_EDIT.md), Limits).
+  depolarization ([LATENT_EDIT.md](LATENT_EDIT.md), [GLOSS.md](GLOSS.md), Limits).
+- Swap and `brdfkit gloss` combine: a swap onto the sharpest measured shape (Fake gold, as narrow as the black glass)
+  followed by `gloss` gives one material over the whole range from mirror to matte.

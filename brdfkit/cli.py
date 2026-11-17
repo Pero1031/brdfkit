@@ -9,6 +9,8 @@ brdfkit command line.
                     [--sym median|mean|none] [--calib CAL.npz [--calib-keep-level DEG]]   (no shift: just the cleaned model)
   brdfkit swap      SHAPE.npz (--source MODEL.npz | --nk NK.yml [--film-nm 20] [--n-film 1.65]) --out OUT.npz [--parts S,N,level] [--cutoff 30]
                     (shape of one material, colour / polarization / reflectance of another, docs/SWAP.md)
+  brdfkit gloss     MODEL.npz [--out OUT.npz (--hwhm DEG | --alpha A | --kernel-alpha A)] [--kernel ggx|beckmann] [--ref-theta-d 30]
+                    [--keep-albedo DEG] [--sym median|mean|none]   (roughen the lobe; without --out: report its width, docs/GLOSS.md)
   brdfkit calibrate GLASS_MODEL.npz --out CAL.npz [--cutoff 10] [--smooth 3] [--check MODEL.npz --refidx NK.yml [--film-nm 20] [--n-film 1.65]]
                     (radiometric error of the table from black glass, docs/CALIBRATION.md)
   brdfkit factor    TABLE --out MODEL.npz [--smooth 0,5] [--measured 20,80] [--floor FLOOR.npz] [--sym none|median|mean]
@@ -79,6 +81,16 @@ def main(argv=None):
     p.add_argument('--parts', default='S,N,level', help='any of S (colour), N (polarization), level (reflectance), comma separated')
     p.add_argument('--cutoff', type=float, default=30.0, help='theta_h [deg] of the lobe energy that defines the level')
     p.add_argument('--smooth', type=float, default=3.0, help='smoothing of the level along theta_d [deg]')
+    p = sub.add_parser('gloss', help='roughen the lobe of a factor model (convolve its microfacet slopes) to a target width')
+    p.add_argument('factor'); p.add_argument('--out', default=None, help='output model; without it the width of the lobe is reported')
+    g = p.add_mutually_exclusive_group()
+    g.add_argument('--hwhm', type=float, default=None, help='target half width at half maximum of D(theta_h) [deg] at --ref-theta-d')
+    g.add_argument('--alpha', type=float, default=None, help='target alpha_eq: the GGX roughness with that half width')
+    g.add_argument('--kernel-alpha', type=float, default=None, help='convolve with a kernel of this roughness instead of a target')
+    p.add_argument('--kernel', choices=('ggx', 'beckmann'), default='ggx', help='slope density of the added roughness')
+    p.add_argument('--ref-theta-d', type=float, default=30.0, help='theta_d [deg] at which the width is measured')
+    p.add_argument('--keep-albedo', type=float, default=None, help='rescale to keep the albedo at this angle of incidence [deg]')
+    p.add_argument('--sym', choices=('median', 'mean', 'none'), default='median', help='symmetrize A over phi_d first (as edit)')
     p = sub.add_parser('calibrate', help='radiometric and polarimetric check against black glass (Fresnel of a dielectric)')
     p.add_argument('glass', help='factor model (.npz) of black glass, floor removed'); p.add_argument('--out', required=True)
     p.add_argument('--cutoff', type=float, default=10.0, help='theta_h [deg] up to which the lobe energy is integrated')
@@ -151,6 +163,22 @@ def main(argv=None):
         src = F.load(a.source) if a.source else SW.fresnel_source(shape, a.nk, a.film_nm, a.n_film)
         m, info = SW.swap(shape, src, [p.strip() for p in a.parts.split(',')], a.cutoff, a.smooth)
         F.save(a.out, m); SW.report(info); print('wrote', a.out)
+    elif a.cmd == 'gloss':
+        from .analysis import factor as F, gloss as GL
+        m = F.load(a.factor)
+        if a.hwhm is None and a.alpha is None and a.kernel_alpha is None:
+            if a.out:
+                raise SystemExit('--out needs a target: --hwhm, --alpha or --kernel-alpha')
+            m = F.symmetrize(m, a.sym); D = GL.microfacet_d(m)[0]
+            w = {t: GL.width(m, t, D) for t in GL.REPORT_THETA_D}
+            print('lobe hwhm [deg] at theta_d ' + ' / '.join(f'{t:g}' for t in w) + ': ' + ' / '.join(f'{v:.2f}' for v in w.values()))
+            wr = GL.width(m, a.ref_theta_d, D)
+            print(f'at theta_d {a.ref_theta_d:g} deg: hwhm {wr:.2f} deg, alpha_eq {GL.alpha_of_hwhm(wr):.3f}')
+        else:
+            if not a.out:
+                raise SystemExit('a target needs --out')
+            m, info = GL.set_gloss(m, a.hwhm, a.alpha, a.kernel_alpha, a.kernel, True, a.ref_theta_d, a.sym, a.keep_albedo)
+            F.save(a.out, m); GL.report(info); print('wrote', a.out)
     elif a.cmd == 'calibrate':
         from .analysis import factor as F, calibrate as CA
         cal = CA.estimate(F.load(a.glass), a.cutoff, a.smooth)

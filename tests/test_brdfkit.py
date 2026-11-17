@@ -26,6 +26,7 @@ from brdfkit.analysis import factor as FA                      # noqa: E402
 from brdfkit.analysis import latent_edit as LE                 # noqa: E402
 from brdfkit.analysis import calibrate as CA                  # noqa: E402
 from brdfkit.analysis import swap as SW                       # noqa: E402
+from brdfkit.analysis import gloss as GL                      # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -638,3 +639,51 @@ def test_swap():
         phys, _ = SW.swap(metal_c, fr, cutoff_deg=10, smooth_deg=0)
         F = CA.metal_reflectance(td, metal['channels'], nk) @ FA.luminance_weights(metal['channels'])
         assert np.allclose(CA.lobe_energy(phys, 10)[meas], F[meas], rtol=1e-3)
+
+
+def _microfacet_model(alpha, kind='beckmann'):
+    """factor model whose rows are a normalized GGX or Beckmann D(theta_h) / (4 cos_i cos_o) on the hpBRDF grid (phi_d coarse)"""
+    phi = np.radians(np.arange(-180, 181, 15.0)); td = np.radians(np.arange(0, 91, 1.0)); th = (np.arange(91) / 90.0) ** 2 * (np.pi / 2)
+    ci, co = GL.cosines(phi, td, th)
+    t2 = np.tan(th) ** 2; c4 = np.cos(th) ** 4
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        D = np.exp(-t2 / alpha ** 2) / (np.pi * alpha ** 2 * c4) if kind == 'beckmann' else alpha ** 2 / (np.pi * c4 * (alpha ** 2 + t2) ** 2)
+        A = np.where((ci > 0) & (co > 0), np.broadcast_to(D, ci.shape) / (4 * ci * co), np.nan)
+    lam = np.array([450.0, 550.0, 650.0])
+    return dict(kind=FA.KIND, A=A.astype(np.float32), S=np.ones((len(td), 3)), N=np.zeros((len(td), 3, 15)), phi_d=phi, theta_d=td,
+                theta_h=th, channels=lam, measured_theta_d=np.array([20.0, 80.0]), smooth_deg=0.0, errors={}, meta={'source': 'synthetic'})
+
+
+def test_gloss():
+    """Beckmann (*) Beckmann is Beckmann with the alphas added in quadrature; the slope mass is kept; a target width is hit;
+    a narrower target is refused; S and N are untouched; the GGX hwhm <-> alpha conversion round-trips"""
+    for a in (0.02, 0.1, 0.4):
+        assert abs(GL.alpha_of_hwhm(GL.hwhm_of_alpha(a)) - a) < 1e-6
+    a1, ak = 0.03, 0.08
+    m = _microfacet_model(a1)
+    out, info = GL.roughen(m, ak, kind='beckmann', shadowing=False)
+    exact = _microfacet_model(np.hypot(a1, ak))
+    D, De = GL.microfacet_d(out)[0], GL.microfacet_d(exact)[0]
+    th = m['theta_h']; sel = np.degrees(th) < 60
+    for j, k in ((0, 30), (6, 50), (12, 70)):
+        assert np.nanmax(np.abs(D[j, k, sel] - De[j, k, sel])) < 1e-2 * De[j, k, 0]
+        P0, P1 = (np.nan_to_num(GL._filled(X)[j, k]) * np.cos(th) ** 4 for X in (GL.microfacet_d(m)[0], D))
+        r = np.tan(np.minimum(th, GL.THETA_MAX)); s = np.degrees(th) < 89
+        mass = [CA.trapezoid(P[s] * 2 * np.pi * r[s], r[s]) for P in (P0, P1)]
+        assert abs(mass[1] / mass[0] - 1) < 0.02
+    assert np.allclose(out['S'], m['S']) and np.allclose(out['N'], m['N'])
+    g = _microfacet_model(0.03, 'ggx')
+    tgt, info = GL.set_gloss(g, hwhm=5.0, sym='none')
+    assert abs(GL.width(tgt, 30) - 5.0) < 0.01 and abs(info['alpha_eq_after'] - GL.alpha_of_hwhm(5.0)) < 1e-6
+    a1 = info['alpha_eq_after']                                                                  # finite at the horizon:
+    assert np.nanmax(tgt['A']) <= np.nanmax(GL.microfacet_d(g)[0]) / a1 ** 2                     # A' = D' / (k_i k_o), k >= alpha
+    noshadow, _ = GL.roughen(g, info['kernel_alpha'], shadowing=False)
+    ratio = tgt['A'] / noshadow['A']
+    assert np.nanmax(ratio) <= 1 + 1e-5 and abs(np.nanmean(ratio[:, 30, :20]) - 1) < 5e-3        # shadowing: only a loss, small away from grazing
+    kept, info2 = GL.set_gloss(g, hwhm=5.0, sym='none', keep_albedo_deg=45)
+    assert info2['albedo_after'][1] < info2['albedo_before'][1] * 1.0001 and abs(info2['albedo_after'][1] / info2['albedo_before'][1] - 1) < 1e-4
+    assert info['albedo_after'][1] < info['albedo_before'][1]                                    # without it the rough lobe loses light
+    try:
+        GL.set_gloss(tgt, hwhm=3.0, sym='none'); raise AssertionError('a narrower target was accepted')
+    except ValueError:
+        pass
