@@ -72,6 +72,9 @@ the dataset does not contain.
   and 75° and warns above 1.
 - **S and N are fixed.** A rougher surface depolarizes more in reality (multiple scattering); the edit does not model that.
 - **Symmetric φ_d structure stays.** The symmetrization removes one-sided structure only (next section).
+- **Two brightness scales.** Neither MERL nor the hpBRDF tables as delivered are on an absolute scale, and the two differ
+  ([CALIBRATION.md](CALIBRATION.md)). The coefficient on PC2 (brightness), the nearest materials and `--toward` compare
+  absolute levels; `--pc` with `--keep-albedo` does not.
 - The hpBRDF peak is flattened by the measurement's angular resolution ([FLOOR.md](FLOOR.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md));
   sharpening edits sharpen that flattened peak, they do not recover detail that was not measured.
 

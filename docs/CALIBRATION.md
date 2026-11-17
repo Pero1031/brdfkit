@@ -79,6 +79,18 @@ that within 0.5, upper half only. That part reflects the room, not the floor:
 Calibrated, the aluminium looks like polished metal rather than dark gunmetal. The black glass reflects the room and
 brightens toward its rim, as a glass ball does.
 
+## Note: MERL is not on an absolute scale either
+
+The same Monte Carlo albedo (luminance, nearest-bin lookups on the MERL grid), at incidence 25° / 45°, on MERL
+materials: white-diffuse-bball gives 0.30 / 0.29 and white-paint 0.33 / 0.33, where a white diffuse ball reflects about
+0.8–0.9. white-marble gives 0.24 / 0.23, chrome 0.12 / 0.14, nickel 0.20 / 0.19 and aluminium 0.14 / 0.11. The constant
+value of the diffuse ball over angle shows that the integration works; MERL's level is about a third of the physical one.
+After the calibration, hpBRDF aluminium (0.94 / 0.90, matched to Fresnel) is far brighter than any MERL metal.
+
+This matters wherever hpBRDF and MERL are compared in absolute terms: the brightness component PC2, the nearest MERL
+materials, and `edit --toward`. An `edit --pc` applies only a change of shape in the log domain, and `--keep-albedo` keeps
+the material's own level, so those edits do not depend on the two scales.
+
 ## Result 2: the spectral errors of the glass do not repeat on aluminium
 
 S / (Fresnel shape) of the glass, at a few wavelengths (1 = correct):
