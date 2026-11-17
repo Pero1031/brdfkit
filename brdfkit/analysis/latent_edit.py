@@ -2,6 +2,9 @@
 Material editing in a latent space: move the grey angular shape A of a factor model (`brdfkit factor`) along the
 inter-material PCA of MERL (`brdfkit merl-pca`), keeping the measured spectrum S and polarization N.
 
+  0. A is first symmetrized over phi_d (`factor.symmetrize`, default 'median'): the hpBRDF lobes carry one-sided arms that an
+     isotropic material cannot have, and broadening edits make them visible as a streak from the highlight
+     (docs/LATENT_EDIT.md). An edit with no shift is then the cleaned, unedited material.
   1. A is put on the (strided) grid of the PCA model: phi_d is folded to [0, 180) deg by averaging the four equivalent
      angles phi, -phi, phi - 180, 180 - phi (isotropy, reciprocity), the theta axes are taken at the nearest bin.
      Grey -> RGB is (A, A, A).
@@ -22,6 +25,7 @@ import warnings
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from .. import geometry as G
+from .factor import symmetrize
 from .merl_pca import MaterialPCA
 
 HALF_PI = np.pi / 2
@@ -103,8 +107,10 @@ def albedo(model_f, theta_i_deg, n=400_000, seed=0):
     return float(np.mean(np.where(np.isfinite(f), f, 0.0) * o[:, 2]) * 2 * np.pi)
 
 
-def edit(model_f, pca: MaterialPCA, pcs=(), toward=(), k=16, keep_albedo_deg=None):
-    """-> (edited factor model, info). pcs: [(component 1-based, t in units of the PCA's spread)], toward: [(material, fraction)]"""
+def edit(model_f, pca: MaterialPCA, pcs=(), toward=(), k=16, keep_albedo_deg=None, sym='median'):
+    """-> (edited factor model, info). pcs: [(component 1-based, t in units of the PCA's spread)], toward: [(material, fraction)],
+    sym: phi_d symmetrization of A before the edit ('median', 'mean' or 'none'; see factor.symmetrize_phi)"""
+    model_f = symmetrize(model_f, sym)
     k = min(int(k), pca.k)
     z, pinfo = project(model_f, pca, k)
     sig = pca.coef[:, :k].std(0)
@@ -129,7 +135,8 @@ def edit(model_f, pca: MaterialPCA, pcs=(), toward=(), k=16, keep_albedo_deg=Non
     near = [pca.names[i] for i in np.argsort(np.linalg.norm(pca.coef[:, :k] - z2, axis=1))[:5]]
     info = dict(k=k, z=(z / sig).tolist(), dz=(dz / sig).tolist(), projection_rmse=pinfo['rmse'], scale=scale, nearest=near,
                 albedo_before=[albedo(model_f, a) for a in (0, 45, 75)], albedo_after=[albedo(out, a) for a in (0, 45, 75)],
-                pcs=[[int(p), float(t)] for p, t in pcs], toward=[[n, float(t)] for n, t in toward], keep_albedo_deg=keep_albedo_deg)
+                pcs=[[int(p), float(t)] for p, t in pcs], toward=[[n, float(t)] for n, t in toward], keep_albedo_deg=keep_albedo_deg,
+                phi_symmetry=sym)
     out['meta'] = dict(model_f.get('meta', {}), edit=info)
     return out, info
 
@@ -137,7 +144,8 @@ def edit(model_f, pca: MaterialPCA, pcs=(), toward=(), k=16, keep_albedo_deg=Non
 def report(info, say=print):
     say(f'coefficients of A on the PCA (in units of the spread of its materials, k = {info["k"]}, rmse {info["projection_rmse"]:.3f}):')
     say('  ' + ' '.join(f'{v:+.1f}' for v in info['z']))
-    say('shift: ' + ', '.join([f'PC{p} {t:+g}' for p, t in info['pcs']] + [f'{t:g} of the way to {n}' for n, t in info['toward']]))
+    say('shift: ' + (', '.join([f'PC{p} {t:+g}' for p, t in info['pcs']] + [f'{t:g} of the way to {n}' for n, t in info['toward']])
+                     or 'none') + f'   (A symmetrized over phi_d: {info.get("phi_symmetry", "none")})')
     say(f'albedo (luminance) at 0 / 45 / 75 deg: before ' + ' '.join(f'{a:.3f}' for a in info['albedo_before']) +
         '   after ' + ' '.join(f'{a:.3f}' for a in info['albedo_after']) +
         (f'   (rescaled by {info["scale"]:.2f} to keep the albedo at {info["keep_albedo_deg"]:g} deg)' if info['keep_albedo_deg'] is not None else ''))

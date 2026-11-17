@@ -13,9 +13,10 @@ Steps (each is skipped when its output already exists, unless --force):
   1. MERL inter-material PCA, log mapping           -> <out>/merl_pca/merl_pca.npz
   2. instrument floor measured on black glass       -> <out>/floor.npz
   3. factor model of the material, floor removed    -> <out>/<material>_factor.npz      (A x S x N, docs/FACTOR.md)
+     and its lobe symmetrized over phi_d             -> <out>/<material>_factor_sym-median.npz   (--sym; removes the streak)
   4. edits of its grey lobe along MERL components   -> <out>/edits/<name>.npz          (docs/LATENT_EDIT.md)
   5. each model baked into a .hpbpca                -> <out>/hpbpca/<name>.hpbpca
-  6. GoLD_rayt scene files, one row of spheres per component -> <out>/scenes/row_pc<N>.json
+  6. GoLD_rayt scene files, one row of spheres per component -> <out>/scenes/row_pc<N>_sym-median.json
   7. (with --renderer) the renders and a contact sheet -> <out>/renders/
 Times on an 8-thread desktop: step 2 about 20 s, step 3 7-10 min (two passes over 13 GB), step 5 2-3 min per model,
 step 7 3-4 min per row (1280 px, 64 spp). Step 1 reads the 100 MERL files once.
@@ -55,6 +56,8 @@ def main():
     ap.add_argument('--floor-ref', default='Black_glass', help='hpBRDF material whose far field gives the instrument floor')
     ap.add_argument('--edits', default='', help='e.g. "1:-1,-0.5,0.5,1;3:-1.5,1.5" (component: shifts in units of the MERL spread)')
     ap.add_argument('--keep-albedo', type=float, default=45.0, help='angle of incidence [deg] whose albedo every edit keeps; <0 = none')
+    ap.add_argument('--sym', choices=('median', 'mean', 'none'), default='median',
+                    help='phi_d symmetrization of the lobe, applied to the unedited material and to every edit')
     ap.add_argument('--renderer', default=None, help='GoLD_rayt.exe (spectral build) to render the rows')
     ap.add_argument('--renderer-cwd', default=None, help='working directory of the renderer (default: the folder of the exe)')
     ap.add_argument('--env', default=None, help='environment map (.hdr) for the scenes; default: the renderer\'s own')
@@ -102,15 +105,23 @@ def main():
         m = FA.fit(t, smooth_deg=(0.0,))[0]
         FA.save(fac_path, m); FA.report(m)
     base = FA.load(fac_path)
+    tag = '' if a.sym == 'none' else f'_sym-{a.sym}'           # output names say how the lobe was treated
+    if tag:
+        sym_path = os.path.join(out, f'{a.material}_factor{tag}.npz')
+        base = FA.symmetrize(base, a.sym)
+        if step(sym_path, a.force, f'lobe symmetrized over phi_d ({a.sym})'):
+            FA.save(sym_path, base)
+        fac_path = sym_path
 
-    # 4. edits
+    # 4. edits (the base is already symmetrized, so the edit itself does not symmetrize again)
     names = {}
     for pc, ts in edits.items():
         names[pc] = []
         for t in ts:
-            name = f'{a.material}_pc{pc}_{t:+g}'; path = os.path.join(out, 'edits', name + '.npz')
+            name = f'{a.material}_pc{pc}_{t:+g}{tag}'; path = os.path.join(out, 'edits', name + '.npz')
             if step(path, a.force, f'edit PC{pc} {t:+g}'):
-                m, info = LE.edit(base, pca, pcs=[(pc, t)], keep_albedo_deg=keep)
+                m, info = LE.edit(base, pca, pcs=[(pc, t)], keep_albedo_deg=keep, sym='none')
+                info['phi_symmetry'] = a.sym; m['meta']['edit']['phi_symmetry'] = a.sym
                 FA.save(path, m); LE.report(info)
             names[pc].append((t, name, path))
 
@@ -124,7 +135,7 @@ def main():
                 if os.path.exists(f):
                     os.remove(f)
         return hp
-    hp_base = bake(fac_path, f'{a.material}_factor')
+    hp_base = bake(fac_path, f'{a.material}_factor{tag}')
     rows = {pc: [(t, bake(p, n)) for t, n, p in lst] for pc, lst in names.items()}
 
     # 6. scenes: one row per component, the unedited material in the middle
@@ -141,7 +152,7 @@ def main():
         env = {'type': 'hdr', 'file': os.path.abspath(a.env).replace('\\', '/'), 'scale': 1.0} if a.env else 'hdr'
         sc = {'options': {'width': 1280, 'spp': a.spp}, 'camera': {'from': [0.0, 0.17, 0.12 * n + 0.02], 'at': [0.0, 0.035, 0.0], 'fov': 30},
               'environment': env, 'materials': mats, 'objects': objs}
-        path = os.path.join(out, 'scenes', f'row_pc{pc}.json'); json.dump(sc, open(path, 'w'), indent=1)
+        path = os.path.join(out, 'scenes', f'row_pc{pc}{tag}.json'); json.dump(sc, open(path, 'w'), indent=1)
         scenes[pc] = (path, [t for t, _ in items])
         print(f'[done] scene {path}  (shifts {", ".join(f"{t:+g}" for t, _ in items)})')
 
@@ -154,7 +165,7 @@ def main():
         sys.exit(f'renderer working directory {cwd} does not exist (--renderer-cwd)')
     pngs = {}
     for pc, (path, ts) in scenes.items():
-        png = os.path.join(out, 'renders', f'row_pc{pc}.png')
+        png = os.path.join(out, 'renders', f'row_pc{pc}{tag}.png')
         if step(png, a.force, f'render PC{pc}'):
             subprocess.run([a.renderer, path, '--seed', '1', '--denoise', '--stokes', '--out', png], cwd=cwd, check=True,
                            stdout=subprocess.DEVNULL)
@@ -168,8 +179,9 @@ def main():
     fig, axs = plt.subplots(len(pngs), 1, figsize=(12.8, 3.2 * len(pngs)), squeeze=False)
     for ax, (pc, (png, ts)) in zip(axs[:, 0], pngs.items()):
         ax.imshow(mpimg.imread(png)[200:480]); ax.axis('off')
-        ax.set_title(f'{a.material}: grey lobe moved along MERL PC{pc} by ' + ', '.join(f'{t:+g}' for t in ts) + ' (spread units)', loc='left')
-    plt.tight_layout(); sheet = os.path.join(out, 'renders', 'sheet.png'); plt.savefig(sheet, dpi=90)
+        ax.set_title(f'{a.material}: grey lobe moved along MERL PC{pc} by ' + ', '.join(f'{t:+g}' for t in ts) + ' (spread units)'
+                     + (f', lobe symmetrized over phi_d ({a.sym})' if tag else ''), loc='left')
+    plt.tight_layout(); sheet = os.path.join(out, 'renders', f'sheet{tag}.png'); plt.savefig(sheet, dpi=90)
     print(f'[done] {sheet}')
 
 

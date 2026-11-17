@@ -71,3 +71,8 @@ N RMS error (same for both S variants):
 A, S and N are independent arrays, so a material can be recombined: the S and N of one material (or of a physical model,
 n, k and a film) with the A of another, including a MERL lobe on the hpBRDF grid. The θ_h ≥ 5° part is the weakest; a
 second, depolarized component would be the next refinement if it shows in renderings.
+
+A keeps the φ_d structure of the table, including one-sided arms that an isotropic material cannot have
+([LATENT_EDIT.md](LATENT_EDIT.md#the-streak-a-one-sided-arm-of-the-measured-lobe)). `factor --sym median` (or `mean`)
+symmetrizes A over the four equivalent φ_d before saving; the default `none` keeps the faithful fit, and `edit`
+symmetrizes by default.

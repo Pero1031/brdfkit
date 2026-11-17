@@ -522,3 +522,34 @@ def test_latent_edit():
         LE.edit(m, pca, pcs=[(9, 1.0)]); raise AssertionError('component outside k accepted')
     except ValueError:
         pass
+
+
+def test_symmetrize_phi():
+    """the four phi_d-equivalent bins become equal; 'median' removes a one-sided arm, 'mean' spreads it over the four;
+    a symmetric lobe is unchanged; edit() symmetrizes by default, so an edit with no shift is the symmetrized model"""
+    phi = np.radians(np.arange(-180, 181, 1.0))                                  # the hpBRDF phi_d axis
+    idx = FA.phi_equivalents(phi)
+    j = int(np.argmin(abs(phi - np.radians(-30))))
+    assert sorted(np.round(np.degrees(phi[idx[j]])).astype(int)) == [-150, -30, 30, 150]
+    assert set(idx[0]) == set(idx[-1])                                           # -180 and +180 deg are one angle
+    base = 1.0 + 0.1 * np.cos(2 * phi)                                           # invariant under all four maps
+    X = np.broadcast_to(base[:, None, None], (len(phi), 3, 4)).astype(np.float32)
+    for mode in ('median', 'mean'):
+        assert np.allclose(FA.symmetrize_phi(X, phi, mode), X, atol=1e-6)
+    Y = X.copy(); Y[j] *= 4.0                                                    # one-sided arm at -30 deg
+    med, mean = FA.symmetrize_phi(Y, phi, 'median'), FA.symmetrize_phi(Y, phi, 'mean')
+    for Z in (med, mean):
+        assert all(np.allclose(Z[idx[:, 0]], Z[idx[:, k]]) for k in range(1, 4))
+    assert np.allclose(med, X, atol=1e-6)                                        # the arm is gone
+    assert np.allclose(mean[idx[j]], X[j] * 1.75, rtol=1e-5)                     # (4 + 1 + 1 + 1) / 4 at all four angles
+    try:
+        FA.symmetrize_phi(X[:181], phi[180:], 'median'); raise AssertionError('half-range phi_d accepted')
+    except ValueError:
+        pass
+    pca, m = _edit_setup()
+    A = m['A'].copy(); A[int(np.argmin(abs(m['phi_d'] - np.radians(-30))))] *= 3.0
+    m2 = dict(m, A=A)
+    e, info = LE.edit(m2, pca)
+    assert np.allclose(e['A'], m['A'], rtol=1e-5) and info['phi_symmetry'] == 'median'
+    e0, _ = LE.edit(m2, pca, sym='none')
+    assert np.allclose(e0['A'], A)

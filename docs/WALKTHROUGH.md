@@ -18,11 +18,11 @@ as measured.
 | Step | Command | Document | Result (aluminium unless noted) |
 |---|---|---|---|
 | 1. Load | `brdfkit info` | [README](../README.md) | every dataset as one `BRDFTable` (Mitsuba `measured_polarized` conventions) |
-| 2. Know the measurement | — | [LU_CHIPMAN.md](LU_CHIPMAN.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md) | only θ_d ≈ 20°–80° is measured (the rest is inpainted); the specular peak is flat within 0.28° (angular resolution) |
+| 2. Know the measurement | — | [LU_CHIPMAN.md](LU_CHIPMAN.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md), [LATENT_EDIT.md](LATENT_EDIT.md#the-streak-a-one-sided-arm-of-the-measured-lobe) | only θ_d ≈ 20°–80° is measured (the rest is inpainted); the specular peak is flat within 0.28° (angular resolution); the lobes have one-sided arms in φ_d that an isotropic material cannot have |
 | 3. Remove the instrument floor | `brdfkit floor`, `--floor` | [FLOOR.md](FLOOR.md) | an unpolarized offset of about 0.006 sr⁻¹ (550 nm), larger in the blue; without removal the materials render bluish and polarization is diluted |
 | 4. Factor the table | `brdfkit factor` | [FACTOR.md](FACTOR.md) | m00 = A(angles) × S(θ_d, λ), m_ij/m00 = N(θ_d, λ): 6.8 MB, 6% m00 and 0.01 polarization error near the specular ridge |
 | 5. MERL latent space | `brdfkit merl-pca` | [MERL_PCA.md](MERL_PCA.md) | PCA of the 100 MERL materials (log mapping); PC1 specular/diffuse, PC2 brightness, PC3 lobe width |
-| 6. Edit | `brdfkit edit` | [LATENT_EDIT.md](LATENT_EDIT.md) | A moved along MERL components, S and N kept, albedo kept: mirror-like to satin aluminium |
+| 6. Edit | `brdfkit edit` | [LATENT_EDIT.md](LATENT_EDIT.md) | A symmetrized over φ_d and moved along MERL components, S and N kept, albedo kept: mirror-like to satin aluminium |
 | 7. Render | `brdfkit compress`, `export` | [PCA.md](PCA.md), [integrations/gold_rayt](../integrations/gold_rayt/) | `.hpbpca` files for the spectral, polarized renderer GoLD_rayt |
 
 Side studies that shaped these choices: the MERL basis does not lack metals (a metal-only basis is worse, `merl-subsets`);
@@ -51,7 +51,8 @@ python examples/latent_demo.py --hpbrdf-dir data/kaist/hpbrdf --merl-dir data/me
 ```
 
 It runs steps 3–7 above, skipping any step whose output exists, and writes the GoLD_rayt scenes
-`out/demo/scenes/row_pc1.json` and `row_pc3.json` (five spheres each: the edited aluminium, the original in the middle).
+`out/demo/scenes/row_pc1_sym-median.json` and `row_pc3_sym-median.json` (five spheres each: the edited aluminium, the
+symmetrized original in the middle). `--sym none` skips the φ_d symmetrization (output names then have no `_sym-*` suffix).
 With the renderer it also renders them and writes a contact sheet (give `--env`: the scenes then need no file relative to
 the renderer's folder):
 
@@ -80,4 +81,6 @@ reads its own assets from (it prints a harmless warning about a missing gold tab
 - The shoulders of the lobe (θ_h 5°–20°) and the far field do not follow the factor model; they are dark, but a second,
   depolarized component would be the refinement.
 - Edits keep S and N; physically, roughening a surface also depolarizes it.
-- A faint diagonal streak from the highlight grows on broadened edits (source unknown).
+- The source of the one-sided φ_d arms of the lobes: their direction differs between materials, so per-sample anisotropy or
+  optics rather than one fixed instrument artifact. The symmetrization removes one-sided arms (aluminium) but only halves
+  structure present at both φ_d and φ_d + 180° (SUJ2, Fake gold, black glass).

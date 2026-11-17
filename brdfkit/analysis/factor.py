@@ -21,10 +21,15 @@ Several S variants (smoothing widths) are fitted in the same two passes.
 Model file (.npz): kind = 'brdfkit-factor', A [n_phi, n_thd, n_thh] float16, S [n_thd, n_ch], N [n_thd, n_ch, 15],
 phi_d, theta_d, theta_h, channels, measured_theta_d, smooth_deg, errors (json), meta (json).
 `view(model)` turns a model back into a BRDFTable (slices built on access), e.g. for `brdfkit compress`.
+
+`symmetrize(model, mode)` makes A equal at the four phi_d an isotropic, reciprocal BRDF cannot tell apart
+(phi, -phi, phi + 180, 180 - phi). The hpBRDF lobes break this symmetry with one-sided 'arms' (docs/LATENT_EDIT.md);
+'median' removes a one-sided arm, 'mean' spreads it over the four angles. S and N depend on theta_d only and are kept.
 """
 import json
 import os
 import time
+import warnings
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from ..table import BRDFTable, WAVELENGTH
@@ -33,6 +38,7 @@ from ..color import cmf
 KIND = 'brdfkit-factor'
 REGIONS = ((0.0, 5.0), (5.0, 20.0), (20.0, 90.01))      # theta_h ranges [deg] for the error report
 RIDX = np.arange(16)[1:]                                 # Mueller elements other than m00, row-major
+SYM_MODES = ('none', 'median', 'mean')
 
 
 def luminance_weights(channels):
@@ -140,6 +146,43 @@ def fit(table: BRDFTable, measured_theta_d=(20.0, 80.0), smooth_deg=(0.0,), log=
                            errors=errors, meta=dict(source=str(table.meta.get('source', '')),
                                                    floor_offset=table.meta.get('floor_offset'), floor_max_gain=table.meta.get('floor_max_gain'))))
     return models
+
+
+def phi_equivalents(phi_d):
+    """[n_phi, 4] indices of the bins nearest to phi, -phi, phi + pi and pi - phi, for every bin of a full-circle phi_d axis"""
+    phi = np.asarray(phi_d, float)
+    step = np.median(np.diff(phi))
+    if phi.max() - phi.min() < 2 * np.pi - 1.5 * step:
+        raise ValueError('phi_d must cover the full circle (a half-range table is symmetric by construction)')
+    wrap = lambda a: (a + np.pi) % (2 * np.pi) - np.pi
+    near = lambda a: np.abs(wrap(phi[None, :] - a[:, None])).argmin(1)
+    return np.stack([near(phi), near(-phi), near(phi + np.pi), near(np.pi - phi)], 1)
+
+
+def symmetrize_phi(X, phi_d, mode='median'):
+    """X [n_phi, ...] made equal over the four equivalent phi_d of each bin. 'mean' averages them; 'median' takes the mean of the
+    middle two, so a single bright (or dark) value among the four, such as a one-sided arm of the lobe, is dropped.
+    Where only two distinct bins are equivalent (phi = 0, +-90, 180 deg) both give their mean. NaN bins are ignored."""
+    if mode == 'none':
+        return X
+    if mode not in SYM_MODES:
+        raise ValueError(f'mode must be one of {SYM_MODES}')
+    idx = phi_equivalents(phi_d)
+    st = np.stack([np.asarray(X, np.float32)[idx[:, k]] for k in range(4)], 0)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)                       # all-NaN bins stay NaN
+        out = np.nanmedian(st, 0) if mode == 'median' else np.nanmean(st, 0)
+    return out.astype(np.float32)
+
+
+def symmetrize(model, mode='median'):
+    """copy of a factor model with A symmetrized over phi_d (`symmetrize_phi`); recorded in meta['phi_symmetry']"""
+    if mode == 'none':
+        return model
+    out = dict(model)
+    out['A'] = symmetrize_phi(model['A'], model['phi_d'], mode)
+    out['meta'] = dict(model.get('meta', {}), phi_symmetry=mode)
+    return out
 
 
 def save(path, model):

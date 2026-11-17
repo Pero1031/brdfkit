@@ -19,7 +19,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Projection onto MERL PCA | `brdfkit merl-project` | Place a measured table (hpBRDF aluminium) in the MERL principal-component space: coefficients, residual, nearest materials. [docs/HPBRDF_ON_MERL.md](docs/HPBRDF_ON_MERL.md) |
 | Instrument floor | `brdfkit floor`, `--floor` | Estimate the unpolarized offset that hpBRDF tables carry far from the lobe (on black glass) and remove it in `compress`, `eval`, `merl-project`. [docs/FLOOR.md](docs/FLOOR.md) |
 | Factorized model | `brdfkit factor` | m00 = grey angular shape A × spectrum S(θ_d, λ), polarization N(θ_d, λ): 6.8 MB, about 6% m00 error near the ridge; the parts can be recombined for editing. [docs/FACTOR.md](docs/FACTOR.md) |
-| Latent editing | `brdfkit edit`, `examples/latent_demo.py` | Move the grey lobe of a factor model along the MERL PCA, keeping the measured spectrum and polarization: materials that were never measured. [docs/LATENT_EDIT.md](docs/LATENT_EDIT.md) |
+| Latent editing | `brdfkit edit`, `examples/latent_demo.py` | Move the grey lobe of a factor model along the MERL PCA, keeping the measured spectrum and polarization: materials that were never measured. The lobe is first symmetrized over φ_d, which removes a streak the measured tables carry. [docs/LATENT_EDIT.md](docs/LATENT_EDIT.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
 ## Usage
