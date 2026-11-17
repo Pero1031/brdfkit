@@ -24,6 +24,7 @@ as measured.
 | 4b. Calibrate on black glass | `brdfkit calibrate`, `edit --calib` | [CALIBRATION.md](CALIBRATION.md) | the tables carry 0.47 (θ_d 20°) to 0.08 (75°) of the Fresnel energy, for glass and aluminium alike; dividing by this K brings aluminium within 0–15% of its Fresnel reflectance |
 | 5. MERL latent space | `brdfkit merl-pca` | [MERL_PCA.md](MERL_PCA.md) | PCA of the 100 MERL materials (log mapping); PC1 specular/diffuse, PC2 brightness, PC3 lobe width |
 | 6. Edit | `brdfkit edit` | [LATENT_EDIT.md](LATENT_EDIT.md) | A symmetrized over φ_d and moved along MERL components, S and N kept, albedo kept: mirror-like to satin aluminium |
+| 6b. Swap the optics | `brdfkit swap` | [SWAP.md](SWAP.md) | the lobe shape of one material with the colour, polarization and reflectance of another (aluminium → gold, steel, black glass) |
 | 7. Render | `brdfkit compress`, `export` | [PCA.md](PCA.md), [integrations/gold_rayt](../integrations/gold_rayt/) | `.hpbpca` files for the spectral, polarized renderer GoLD_rayt |
 
 Side studies that shaped these choices: the MERL basis does not lack metals (a metal-only basis is worse, `merl-subsets`);

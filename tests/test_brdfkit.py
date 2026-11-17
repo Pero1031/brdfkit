@@ -25,6 +25,7 @@ from brdfkit.analysis import floor as FL                       # noqa: E402
 from brdfkit.analysis import factor as FA                      # noqa: E402
 from brdfkit.analysis import latent_edit as LE                 # noqa: E402
 from brdfkit.analysis import calibrate as CA                  # noqa: E402
+from brdfkit.analysis import swap as SW                       # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -607,3 +608,33 @@ def test_calibrate():
         kept = CA.apply(metal, CA.load(p), keep_level_deg=30)
         j = int(np.argmin(abs(np.degrees(td) - 30)))
         assert np.allclose(kept['A'][:, j], metal['A'][:, j], rtol=1e-5) and kept['meta']['radiometric_calibration']['keep_level_deg'] == 30
+
+
+def test_swap():
+    """a full swap keeps the shape of X and takes the reflectance level, S and N of Y; a colour-only swap leaves A and N;
+    mixed calibration states are refused; a Fresnel source on a calibrated shape gives that reflectance"""
+    K = lambda t: 0.5 * np.cos(t) ** 2 + 0.05
+    with tempfile.TemporaryDirectory() as d:
+        nk = os.path.join(d, 'metal.yml')
+        open(nk, 'w').write('DATA:\n  - type: tabulated nk\n    data: |\n        0.40 0.50 4.8\n        0.80 2.00 8.0\n')
+        metal = _fresnel_model(nk, K, width_deg=3.0)
+        glass = _fresnel_model(np.full(4, 1.5), K, width_deg=0.8)
+        td = metal['theta_d']; meas = (np.degrees(td) >= 20) & (np.degrees(td) <= 80)
+        out, info = SW.swap(metal, glass, cutoff_deg=10, smooth_deg=0)
+        assert np.allclose(CA.lobe_energy(out, 10)[meas], CA.lobe_energy(glass, 10)[meas], rtol=1e-4)
+        near = np.degrees(metal['theta_h']) < 10
+        r = out['A'][:, meas][..., near] / metal['A'][:, meas][..., near]
+        assert np.allclose(r, r[:1, :, :1], rtol=1e-5)                                   # same shape, rescaled per theta_d
+        assert np.allclose(out['S'], glass['S']) and np.allclose(out['N'], glass['N']) and info['parts'] == ['S', 'N', 'level']
+        col, _ = SW.swap(metal, glass, parts=['S'])
+        assert np.allclose(col['A'], metal['A']) and np.allclose(col['N'], metal['N']) and np.allclose(col['S'], glass['S'])
+        metal_c = CA.apply(metal, CA.estimate(glass, 10, 0))
+        try:
+            SW.swap(metal_c, glass); raise AssertionError('mixed calibration states accepted')
+        except ValueError:
+            pass
+        fr = SW.fresnel_source(metal_c, nk)
+        assert np.allclose(fr['N'][meas], metal['N'][meas], atol=1e-6) and np.allclose(fr['S'], metal['S'])
+        phys, _ = SW.swap(metal_c, fr, cutoff_deg=10, smooth_deg=0)
+        F = CA.metal_reflectance(td, metal['channels'], nk) @ FA.luminance_weights(metal['channels'])
+        assert np.allclose(CA.lobe_energy(phys, 10)[meas], F[meas], rtol=1e-3)

@@ -7,6 +7,8 @@ brdfkit command line.
   brdfkit floor     TABLE --out FLOOR.npz [--phi-step 12] [--theta-h-min 40] [--theta-d 25,75] [--stat p50]
   brdfkit edit      MODEL.npz --model MERL_PCA.npz --out EDITED.npz [--pc 1:-0.5 ...] [--toward nickel:0.5 ...] [--k 16] [--keep-albedo 45]
                     [--sym median|mean|none] [--calib CAL.npz [--calib-keep-level DEG]]   (no shift: just the cleaned model)
+  brdfkit swap      SHAPE.npz (--source MODEL.npz | --nk NK.yml [--film-nm 20] [--n-film 1.65]) --out OUT.npz [--parts S,N,level] [--cutoff 30]
+                    (shape of one material, colour / polarization / reflectance of another, docs/SWAP.md)
   brdfkit calibrate GLASS_MODEL.npz --out CAL.npz [--cutoff 10] [--smooth 3] [--check MODEL.npz --refidx NK.yml [--film-nm 20] [--n-film 1.65]]
                     (radiometric error of the table from black glass, docs/CALIBRATION.md)
   brdfkit factor    TABLE --out MODEL.npz [--smooth 0,5] [--measured 20,80] [--floor FLOOR.npz] [--sym none|median|mean]
@@ -69,6 +71,14 @@ def main(argv=None):
                    help='symmetrize A over the four equivalent phi_d before the edit (removes the one-sided arms of hpBRDF lobes)')
     p.add_argument('--calib', default=None, help='calibration file of `brdfkit calibrate`: divide A by its K(theta_d) first')
     p.add_argument('--calib-keep-level', type=float, default=None, help='with --calib: keep the level at this theta_d [deg] (fix the trend only)')
+    p = sub.add_parser('swap', help='angular shape of one factor model with the colour, polarization and reflectance of another')
+    p.add_argument('shape', help='factor model whose lobe shape is kept'); p.add_argument('--out', required=True)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument('--source', help='factor model giving the swapped parts'); g.add_argument('--nk', help='n, k table (.yml): Fresnel as the source')
+    p.add_argument('--film-nm', type=float, default=0.0); p.add_argument('--n-film', type=float, default=1.65)
+    p.add_argument('--parts', default='S,N,level', help='any of S (colour), N (polarization), level (reflectance), comma separated')
+    p.add_argument('--cutoff', type=float, default=30.0, help='theta_h [deg] of the lobe energy that defines the level')
+    p.add_argument('--smooth', type=float, default=3.0, help='smoothing of the level along theta_d [deg]')
     p = sub.add_parser('calibrate', help='radiometric and polarimetric check against black glass (Fresnel of a dielectric)')
     p.add_argument('glass', help='factor model (.npz) of black glass, floor removed'); p.add_argument('--out', required=True)
     p.add_argument('--cutoff', type=float, default=10.0, help='theta_h [deg] up to which the lobe energy is integrated')
@@ -135,6 +145,12 @@ def main(argv=None):
             print(f'radiometric calibration {a.calib} applied' + (f' (level kept at theta_d {a.calib_keep_level:g} deg)' if a.calib_keep_level is not None else ''))
         m, info = LE.edit(base, MaterialPCA.load(a.model), pcs, tw, a.k, a.keep_albedo, a.sym)
         F.save(a.out, m); LE.report(info); print('wrote', a.out)
+    elif a.cmd == 'swap':
+        from .analysis import factor as F, swap as SW
+        shape = F.load(a.shape)
+        src = F.load(a.source) if a.source else SW.fresnel_source(shape, a.nk, a.film_nm, a.n_film)
+        m, info = SW.swap(shape, src, [p.strip() for p in a.parts.split(',')], a.cutoff, a.smooth)
+        F.save(a.out, m); SW.report(info); print('wrote', a.out)
     elif a.cmd == 'calibrate':
         from .analysis import factor as F, calibrate as CA
         cal = CA.estimate(F.load(a.glass), a.cutoff, a.smooth)
