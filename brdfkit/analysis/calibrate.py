@@ -31,6 +31,7 @@ from .lu_chipman import Metal, film_rs_rp, fresnel_rs_rp, lu_chipman, mueller_fr
 
 KIND = 'brdfkit-calibration'
 FIT_ELEMENTS = ((0, 1), (1, 0), (2, 2), (3, 3))
+trapezoid = getattr(np, 'trapezoid', None) or np.trapz        # numpy >= 2.0 / older numpy
 
 
 # ----------------------------------------------------------------------------- frames
@@ -98,7 +99,7 @@ def lobe_energy(model, cutoff_deg=10.0):
         Abar = np.nanmean(A, 0)
     sel = np.degrees(th) <= cutoff_deg + 1e-9
     w = np.cos(th[sel]) * np.sin(th[sel])
-    return np.trapz(np.nan_to_num(Abar[:, sel]) * w, th[sel], axis=1) * 2 * np.pi * 4 * np.cos(td) ** 2
+    return trapezoid(np.nan_to_num(Abar[:, sel]) * w, th[sel], axis=1) * 2 * np.pi * 4 * np.cos(td) ** 2
 
 
 def fit_n(Msp, theta_d, rows, n_range=(1.3, 2.2)):

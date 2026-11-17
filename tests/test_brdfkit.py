@@ -569,7 +569,7 @@ def _fresnel_model(nk_or_n, K, width_deg, wv=(450.0, 550.0, 650.0, 750.0)):
     yw = FA.luminance_weights(lam); FY = F @ yw
     D = np.exp(-0.5 * (np.degrees(th) / width_deg) ** 2)
     sel = np.degrees(th) <= 10.0
-    D /= np.trapz(D[sel] * np.cos(th[sel]) * np.sin(th[sel]), th[sel]) * 2 * np.pi                 # the estimator's normalization
+    D /= CA.trapezoid(D[sel] * np.cos(th[sel]) * np.sin(th[sel]), th[sel]) * 2 * np.pi             # the estimator's normalization
     with np.errstate(divide='ignore', invalid='ignore'):
         Atd = FY * K(td) / (4 * np.cos(td) ** 2)
     Atd[-1] = Atd[-2]
