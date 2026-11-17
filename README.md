@@ -18,6 +18,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Inter-material PCA | `brdfkit merl-pca` | Matusik 2003-style PCA across the 100 MERL materials: common basis, material distribution, leave-one-out generalization error. [docs/MERL_PCA.md](docs/MERL_PCA.md) |
 | Projection onto MERL PCA | `brdfkit merl-project` | Place a measured table (hpBRDF aluminium) in the MERL principal-component space: coefficients, residual, nearest materials. [docs/HPBRDF_ON_MERL.md](docs/HPBRDF_ON_MERL.md) |
 | Instrument floor | `brdfkit floor`, `--floor` | Estimate the unpolarized offset that hpBRDF tables carry far from the lobe (on black glass) and remove it in `compress`, `eval`, `merl-project`. [docs/FLOOR.md](docs/FLOOR.md) |
+| Calibration on black glass | `brdfkit calibrate`, `edit --calib` | Compare the black glass with Fresnel of a dielectric: the tables carry 0.47 (θ_d 20°) to 0.08 (75°) of the Fresnel energy, the same on aluminium; correct it, and see the spectral and polarimetric accuracy at the specular. [docs/CALIBRATION.md](docs/CALIBRATION.md) |
 | Factorized model | `brdfkit factor` | m00 = grey angular shape A × spectrum S(θ_d, λ), polarization N(θ_d, λ): 6.8 MB, about 6% m00 error near the ridge; the parts can be recombined for editing. [docs/FACTOR.md](docs/FACTOR.md) |
 | Latent editing | `brdfkit edit`, `examples/latent_demo.py` | Move the grey lobe of a factor model along the MERL PCA, keeping the measured spectrum and polarization: materials that were never measured. The lobe is first symmetrized over φ_d, which removes a streak the measured tables carry. [docs/LATENT_EDIT.md](docs/LATENT_EDIT.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
@@ -56,12 +57,12 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit},
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate},
                  color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            WALKTHROUGH.md (start here), PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md
+docs/            WALKTHROUGH.md (start here), PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md
 examples/        latent_demo.py: the whole chain from the downloaded data to rendered edits
 data/, out/      datasets and derived files; not tracked by git
 ```

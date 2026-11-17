@@ -6,7 +6,9 @@ brdfkit command line.
   brdfkit eval      TABLE OUT.npz [--slices 0,30,60] [--sweep] [--floor FLOOR.npz] [--floor-keep 0.02] [--floor-max-gain 4]
   brdfkit floor     TABLE --out FLOOR.npz [--phi-step 12] [--theta-h-min 40] [--theta-d 25,75] [--stat p50]
   brdfkit edit      MODEL.npz --model MERL_PCA.npz --out EDITED.npz [--pc 1:-0.5 ...] [--toward nickel:0.5 ...] [--k 16] [--keep-albedo 45]
-                    [--sym median|mean|none]   (no shift: just the phi_d-symmetrized model)
+                    [--sym median|mean|none] [--calib CAL.npz [--calib-keep-level DEG]]   (no shift: just the cleaned model)
+  brdfkit calibrate GLASS_MODEL.npz --out CAL.npz [--cutoff 10] [--smooth 3] [--check MODEL.npz --refidx NK.yml [--film-nm 20] [--n-film 1.65]]
+                    (radiometric error of the table from black glass, docs/CALIBRATION.md)
   brdfkit factor    TABLE --out MODEL.npz [--smooth 0,5] [--measured 20,80] [--floor FLOOR.npz] [--sym none|median|mean]
                     (A x S x N model; TABLE may then be MODEL.npz)
   brdfkit export    OUT.npz OUT.hpbpca [--dtype float16]
@@ -65,6 +67,15 @@ def main(argv=None):
     p.add_argument('--k', type=int, default=16); p.add_argument('--keep-albedo', type=float, default=None, help='rescale to keep the albedo at this angle of incidence [deg]')
     p.add_argument('--sym', choices=('median', 'mean', 'none'), default='median',
                    help='symmetrize A over the four equivalent phi_d before the edit (removes the one-sided arms of hpBRDF lobes)')
+    p.add_argument('--calib', default=None, help='calibration file of `brdfkit calibrate`: divide A by its K(theta_d) first')
+    p.add_argument('--calib-keep-level', type=float, default=None, help='with --calib: keep the level at this theta_d [deg] (fix the trend only)')
+    p = sub.add_parser('calibrate', help='radiometric and polarimetric check against black glass (Fresnel of a dielectric)')
+    p.add_argument('glass', help='factor model (.npz) of black glass, floor removed'); p.add_argument('--out', required=True)
+    p.add_argument('--cutoff', type=float, default=10.0, help='theta_h [deg] up to which the lobe energy is integrated')
+    p.add_argument('--smooth', type=float, default=3.0, help='smoothing of K along theta_d [deg]')
+    p.add_argument('--check', default=None, help='factor model of a metal to check the correction on (albedo / Fresnel)')
+    p.add_argument('--refidx', default=None, help='n, k table (.yml) of that metal'); p.add_argument('--film-nm', type=float, default=0.0)
+    p.add_argument('--n-film', type=float, default=1.65); p.add_argument('--no-plot', action='store_true')
     p = sub.add_parser('merl-pca', help='inter-material PCA of a set of MERL tables'); p.add_argument('paths', nargs='+')
     p.add_argument('--out', required=True); p.add_argument('--stride', default='2', help='grid stride, one int or phi_d,theta_d,theta_h')
     p.add_argument('--k', type=int, default=16, help='components kept in the basis'); p.add_argument('--mapping', choices=('log', 'nielsen'), default='log')
@@ -117,8 +128,29 @@ def main(argv=None):
         from .analysis.merl_pca import MaterialPCA
         pcs = [(int(x.split(':')[0]), float(x.split(':')[1])) for x in a.pc]
         tw = [(x.rsplit(':', 1)[0], float(x.rsplit(':', 1)[1])) for x in a.toward]
-        m, info = LE.edit(F.load(a.factor), MaterialPCA.load(a.model), pcs, tw, a.k, a.keep_albedo, a.sym)
+        base = F.load(a.factor)
+        if a.calib:
+            from .analysis import calibrate as CA
+            base = CA.apply(base, CA.load(a.calib), a.calib_keep_level)
+            print(f'radiometric calibration {a.calib} applied' + (f' (level kept at theta_d {a.calib_keep_level:g} deg)' if a.calib_keep_level is not None else ''))
+        m, info = LE.edit(base, MaterialPCA.load(a.model), pcs, tw, a.k, a.keep_albedo, a.sym)
         F.save(a.out, m); LE.report(info); print('wrote', a.out)
+    elif a.cmd == 'calibrate':
+        from .analysis import factor as F, calibrate as CA
+        cal = CA.estimate(F.load(a.glass), a.cutoff, a.smooth)
+        CA.save(a.out, cal)
+        rows = None
+        if a.check:
+            if not a.refidx:
+                raise SystemExit('--check needs --refidx (n, k of that metal)')
+            rows = CA.check(F.load(a.check), cal, a.refidx, a.film_nm, a.n_film)
+        lines = []
+        CA.report(cal, rows, os.path.basename(a.check) if a.check else '', say=lambda s: (print(s), lines.append(s)))
+        base = a.out[:-4] if a.out.endswith('.npz') else a.out
+        open(base + '.txt', 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+        if not a.no_plot:
+            CA.plot(cal, base + '.png', rows)
+        print('wrote', a.out, base + '.txt', '' if a.no_plot else base + '.png')
     elif a.cmd == 'lu-chipman':
         from .analysis.lu_chipman import run_report
         run_report(a.npz, [(p, os.path.splitext(os.path.basename(p))[0]) for p in a.refidx], a.out, raw=a.raw, n_film=a.n_film)

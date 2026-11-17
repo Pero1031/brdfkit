@@ -24,6 +24,7 @@ from brdfkit.analysis import merl_subsets as MS                # noqa: E402
 from brdfkit.analysis import floor as FL                       # noqa: E402
 from brdfkit.analysis import factor as FA                      # noqa: E402
 from brdfkit.analysis import latent_edit as LE                 # noqa: E402
+from brdfkit.analysis import calibrate as CA                  # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -553,3 +554,56 @@ def test_symmetrize_phi():
     assert np.allclose(e['A'], m['A'], rtol=1e-5) and info['phi_symmetry'] == 'median'
     e0, _ = LE.edit(m2, pca, sym='none')
     assert np.allclose(e0['A'], A)
+
+
+def _fresnel_model(nk_or_n, K, width_deg, wv=(450.0, 550.0, 650.0, 750.0)):
+    """factor model of a specular reflector (dielectric n per channel, or a metal n, k .yml) on the hpBRDF grid, whose lobe
+    energy is K(theta_d) times its Fresnel reflectance and whose N is the Fresnel Mueller matrix in the table frames"""
+    td = np.radians(np.arange(0, 91, 1.0)); th = (np.arange(91) / 90.0) ** 2 * (np.pi / 2); phi = np.radians(np.arange(-180, 181, 15.0))
+    lam = np.array(wv)
+    if isinstance(nk_or_n, str):
+        F = CA.metal_reflectance(td, lam, nk_or_n); met = LC.Metal(nk_or_n)
+        Msp = np.stack([LC.mueller_from_amplitudes(*LC.fresnel_rs_rp(np.cos(td), met.eta(l))) for l in lam], 1)
+    else:
+        F, Msp = CA.dielectric(td, np.asarray(nk_or_n, float))
+    yw = FA.luminance_weights(lam); FY = F @ yw
+    D = np.exp(-0.5 * (np.degrees(th) / width_deg) ** 2)
+    sel = np.degrees(th) <= 10.0
+    D /= np.trapz(D[sel] * np.cos(th[sel]) * np.sin(th[sel]), th[sel]) * 2 * np.pi                 # the estimator's normalization
+    with np.errstate(divide='ignore', invalid='ignore'):
+        Atd = FY * K(td) / (4 * np.cos(td) ** 2)
+    Atd[-1] = Atd[-2]
+    A = np.broadcast_to((Atd[:, None] * D[None, :])[None], (len(phi), len(td), len(th))).astype(np.float32)
+    N = CA.sp_to_table(Msp, td).reshape(len(td), len(lam), 16)[..., 1:]
+    N[0] = N[1]; N[-1] = N[-2]
+    return dict(kind=FA.KIND, A=A, S=F / FY[:, None], N=N, phi_d=phi, theta_d=td, theta_h=th, channels=lam,
+                measured_theta_d=np.array([20.0, 80.0]), smooth_deg=0.0, errors={}, meta={'source': 'synthetic'})
+
+
+def test_calibrate():
+    """table <-> (s, p) frames round-trip; a synthetic glass with a known index and radiometric error K(theta_d) gives back n
+    and K; applying K to a metal with the same error brings its albedo to its Fresnel reflectance"""
+    td = np.radians(np.arange(0, 91, 1.0))
+    F, Msp = CA.dielectric(td, np.array([1.5, 1.6]))
+    back = CA.table_to_sp(CA.sp_to_table(Msp, td), td)
+    ok = np.isfinite(back).all((-1, -2, -3))
+    assert ok.sum() == 89 and np.allclose(back[ok], Msp[ok], atol=1e-10)
+    K = lambda t: 0.5 * np.cos(t) ** 2 + 0.05
+    n_true = 1.50 + 0.02 * (550.0 / np.array([450.0, 550.0, 650.0, 750.0])) ** 2
+    glass = _fresnel_model(n_true, K, width_deg=0.8)
+    cal = CA.estimate(glass, cutoff_deg=10, smooth_deg=0)
+    assert np.allclose(cal['n'], n_true, atol=1e-3) and cal['n_rms'].max() < 1e-3
+    meas = (np.degrees(td) >= 20) & (np.degrees(td) <= 80)
+    assert np.allclose(cal['K'][meas], K(td[meas]), rtol=1e-4)                  # n on a 0.0002 grid, A in float32
+    assert np.allclose(cal['spectral_error'][meas], 1.0, atol=1e-3) and np.nanmax(np.abs(cal['D_meas'] - cal['D_fresnel'])) < 1e-3
+    with tempfile.TemporaryDirectory() as d:
+        nk = os.path.join(d, 'metal.yml')
+        open(nk, 'w').write('DATA:\n  - type: tabulated nk\n    data: |\n        0.40 0.50 4.8\n        0.80 2.00 8.0\n')
+        metal = _fresnel_model(nk, K, width_deg=3.0)
+        rows = CA.check(metal, cal, nk, angles=(30, 50), n_mc=300_000)
+        for a, b, Fm, r0, r1 in rows:
+            assert r0 < 0.6 and abs(r1 - 1) < 0.08, (a, r0, r1)
+        p = os.path.join(d, 'cal.npz'); CA.save(p, cal)
+        kept = CA.apply(metal, CA.load(p), keep_level_deg=30)
+        j = int(np.argmin(abs(np.degrees(td) - 30)))
+        assert np.allclose(kept['A'][:, j], metal['A'][:, j], rtol=1e-5) and kept['meta']['radiometric_calibration']['keep_level_deg'] == 30

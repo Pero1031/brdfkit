@@ -14,6 +14,7 @@ Steps (each is skipped when its output already exists, unless --force):
   2. instrument floor measured on black glass       -> <out>/floor.npz
   3. factor model of the material, floor removed    -> <out>/<material>_factor.npz      (A x S x N, docs/FACTOR.md)
      and its lobe symmetrized over phi_d             -> <out>/<material>_factor_sym-median.npz   (--sym; removes the streak)
+     (--calib CAL.npz: first corrected with the black-glass calibration -> ..._sym-median_cal.npz, docs/CALIBRATION.md)
   4. edits of its grey lobe along MERL components   -> <out>/edits/<name>.npz          (docs/LATENT_EDIT.md)
   5. each model baked into a .hpbpca                -> <out>/hpbpca/<name>.hpbpca
   6. GoLD_rayt scene files, one row of spheres per component -> <out>/scenes/row_pc<N>_sym-median.json
@@ -34,7 +35,7 @@ sys.path.insert(0, ROOT)
 from brdfkit.io import load                                    # noqa: E402
 from brdfkit.compress import compress                          # noqa: E402
 from brdfkit.export import write as export_hpbpca              # noqa: E402
-from brdfkit.analysis import floor as FL, factor as FA, latent_edit as LE, merl_pca as MP   # noqa: E402
+from brdfkit.analysis import floor as FL, factor as FA, latent_edit as LE, merl_pca as MP, calibrate as CA   # noqa: E402
 
 DEFAULT_EDITS = {1: (-1.0, -0.5, 0.5, 1.0), 3: (-1.5, -0.75, 0.75, 1.5)}
 
@@ -58,6 +59,8 @@ def main():
     ap.add_argument('--keep-albedo', type=float, default=45.0, help='angle of incidence [deg] whose albedo every edit keeps; <0 = none')
     ap.add_argument('--sym', choices=('median', 'mean', 'none'), default='median',
                     help='phi_d symmetrization of the lobe, applied to the unedited material and to every edit')
+    ap.add_argument('--calib', default=None, help='calibration file of `brdfkit calibrate` (black glass): corrects the theta_d '
+                    'dependence and scale of the lobe energy (docs/CALIBRATION.md); output names get _cal')
     ap.add_argument('--renderer', default=None, help='GoLD_rayt.exe (spectral build) to render the rows')
     ap.add_argument('--renderer-cwd', default=None, help='working directory of the renderer (default: the folder of the exe)')
     ap.add_argument('--env', default=None, help='environment map (.hdr) for the scenes; default: the renderer\'s own')
@@ -105,13 +108,16 @@ def main():
         m = FA.fit(t, smooth_deg=(0.0,))[0]
         FA.save(fac_path, m); FA.report(m)
     base = FA.load(fac_path)
-    tag = '' if a.sym == 'none' else f'_sym-{a.sym}'           # output names say how the lobe was treated
+    tag = ('' if a.sym == 'none' else f'_sym-{a.sym}') + ('_cal' if a.calib else '')   # output names say how the lobe was treated
+    if a.calib:
+        base = CA.apply(base, CA.load(a.calib))
     if tag:
-        sym_path = os.path.join(out, f'{a.material}_factor{tag}.npz')
+        clean_path = os.path.join(out, f'{a.material}_factor{tag}.npz')
         base = FA.symmetrize(base, a.sym)
-        if step(sym_path, a.force, f'lobe symmetrized over phi_d ({a.sym})'):
-            FA.save(sym_path, base)
-        fac_path = sym_path
+        what = ', '.join(([f'lobe symmetrized over phi_d ({a.sym})'] if a.sym != 'none' else []) + (['radiometric calibration'] if a.calib else []))
+        if step(clean_path, a.force, what):
+            FA.save(clean_path, base)
+        fac_path = clean_path
 
     # 4. edits (the base is already symmetrized, so the edit itself does not symmetrize again)
     names = {}
@@ -180,7 +186,8 @@ def main():
     for ax, (pc, (png, ts)) in zip(axs[:, 0], pngs.items()):
         ax.imshow(mpimg.imread(png)[200:480]); ax.axis('off')
         ax.set_title(f'{a.material}: grey lobe moved along MERL PC{pc} by ' + ', '.join(f'{t:+g}' for t in ts) + ' (spread units)'
-                     + (f', lobe symmetrized over phi_d ({a.sym})' if tag else ''), loc='left')
+                     + (f', lobe symmetrized over phi_d ({a.sym})' if a.sym != 'none' else '')
+                     + (', calibrated on black glass' if a.calib else ''), loc='left')
     plt.tight_layout(); sheet = os.path.join(out, 'renders', f'sheet{tag}.png'); plt.savefig(sheet, dpi=90)
     print(f'[done] {sheet}')
 

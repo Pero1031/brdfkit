@@ -21,6 +21,7 @@ as measured.
 | 2. Know the measurement | — | [LU_CHIPMAN.md](LU_CHIPMAN.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md), [LATENT_EDIT.md](LATENT_EDIT.md#the-streak-a-one-sided-arm-of-the-measured-lobe) | only θ_d ≈ 20°–80° is measured (the rest is inpainted); the specular peak is flat within 0.28° (angular resolution); the lobes have one-sided arms in φ_d that an isotropic material cannot have |
 | 3. Remove the instrument floor | `brdfkit floor`, `--floor` | [FLOOR.md](FLOOR.md) | an unpolarized offset of about 0.006 sr⁻¹ (550 nm), larger in the blue; without removal the materials render bluish and polarization is diluted |
 | 4. Factor the table | `brdfkit factor` | [FACTOR.md](FACTOR.md) | m00 = A(angles) × S(θ_d, λ), m_ij/m00 = N(θ_d, λ): 6.8 MB, 6% m00 and 0.01 polarization error near the specular ridge |
+| 4b. Calibrate on black glass | `brdfkit calibrate`, `edit --calib` | [CALIBRATION.md](CALIBRATION.md) | the tables carry 0.47 (θ_d 20°) to 0.08 (75°) of the Fresnel energy, for glass and aluminium alike; dividing by this K brings aluminium within 0–15% of its Fresnel reflectance |
 | 5. MERL latent space | `brdfkit merl-pca` | [MERL_PCA.md](MERL_PCA.md) | PCA of the 100 MERL materials (log mapping); PC1 specular/diffuse, PC2 brightness, PC3 lobe width |
 | 6. Edit | `brdfkit edit` | [LATENT_EDIT.md](LATENT_EDIT.md) | A symmetrized over φ_d and moved along MERL components, S and N kept, albedo kept: mirror-like to satin aluminium |
 | 7. Render | `brdfkit compress`, `export` | [PCA.md](PCA.md), [integrations/gold_rayt](../integrations/gold_rayt/) | `.hpbpca` files for the spectral, polarized renderer GoLD_rayt |
@@ -36,7 +37,7 @@ both come from the measurement, not the materials ([HPBRDF_ON_MERL.md](HPBRDF_ON
 | What | Where | Size | Put it in |
 |---|---|---|---|
 | hpBRDF `Aluminum` (the material to edit) | [Hugging Face](https://huggingface.co/datasets/yunseongmoon/Hyperspectral-Polarimetric-BRDF) (the authors' `download_hpbrdf.py` in [their repository](https://github.com/yunseong0518/hpBRDF) fetches it) | 13.0 GB | `data/kaist/hpbrdf/Aluminum.hpbrdf` |
-| hpBRDF `Black glass` (reference for the floor; optional but recommended) | same | 13.0 GB | `data/kaist/hpbrdf/Black_glass.hpbrdf` |
+| hpBRDF `Black glass` (reference for the floor and the calibration; optional but recommended) | same | 13.0 GB | `data/kaist/hpbrdf/Black_glass.hpbrdf` |
 | MERL BRDF database, 100 `.binary` files | [Zenodo, doi:10.5281/zenodo.8101680](https://doi.org/10.5281/zenodo.8101680) (CC BY-SA 4.0) | 3.3 GB | `data/merl/` |
 
 File names with spaces are expected with underscores. A symlink or junction into wherever the data lives works.
@@ -53,6 +54,8 @@ python examples/latent_demo.py --hpbrdf-dir data/kaist/hpbrdf --merl-dir data/me
 It runs steps 3–7 above, skipping any step whose output exists, and writes the GoLD_rayt scenes
 `out/demo/scenes/row_pc1_sym-median.json` and `row_pc3_sym-median.json` (five spheres each: the edited aluminium, the
 symmetrized original in the middle). `--sym none` skips the φ_d symmetrization (output names then have no `_sym-*` suffix).
+`--calib CAL.npz` also applies the black-glass calibration (output names get `_cal`); make the calibration first with
+`brdfkit factor` on the black glass and `brdfkit calibrate` ([CALIBRATION.md](CALIBRATION.md)).
 With the renderer it also renders them and writes a contact sheet (give `--env`: the scenes then need no file relative to
 the renderer's folder):
 
@@ -76,6 +79,8 @@ reads its own assets from (it prints a harmless warning about a missing gold tab
 
 ## What is not settled
 
+- The cause of the radiometric error K(θ_d) (an illumination-angle calibration or cosine factors in the tables) and its
+  value beyond θ_d 65° ([CALIBRATION.md](CALIBRATION.md)); the spectral errors of the glass do not repeat on aluminium, so S is not corrected.
 - The floor's source (dark/bias residual or ambient light) and the irregular θ_d dependence of the spectrum S
   (a calibration difference between illumination angles is suspected) — the supplementary document of the paper may say.
 - The shoulders of the lobe (θ_h 5°–20°) and the far field do not follow the factor model; they are dark, but a second,
