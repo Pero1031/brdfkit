@@ -34,6 +34,7 @@ about 20° to 80° in 2.5° steps. The checks below use θ_d 20°–79°.
 | 7 | The specular spectrum varies irregularly along θ_d | 0.7 %–3.7 % per bin; far from the lobe only 0.1 %–0.3 % | Specific to the specular peak | Smooth S along θ_d or use a physical model ([FACTOR.md](FACTOR.md)) |
 | 8 | One-sided φ_d arms | Arm / its mirror image at θ_d 25°: SUJ2 7.0, aluminium 3.4, fake gold 3.3, black glass 2.3, red plastic 1.4; white and black plastics 1.1 (none) | The samples (polishing marks) | `--sym` in `factor` and `edit` ([LATENT_EDIT.md](LATENT_EDIT.md)) |
 | 9 | Metals' polarization disagrees with Fresnel; dielectrics' agrees | Diattenuation at θ_d 60°: aluminium 0.28 (Fresnel 0.06), SUJ2 0.02 (iron 0.44); five dielectrics within 0.07 (0.1 at 45°) | Metals only | Take N of a metal from its n, k (`brdfkit swap --nk`) |
+| 10 | The diffuse body is not symmetric in light and camera | White plastics: body ∝ cos^1.1–1.2 of the direction Mitsuba calls outgoing, cos^−0.3 of the other; the reciprocity break of the smooth samples equals the ratio of the two cosines | Unknown (a one-sided cosine in part of the tables?) | Keep it in mind when fitting a diffuse model |
 
 Smaller items: reciprocity (φ_d 0° against 180°) holds within 20 % at θ_d 25°–45° and is off by up to 57 % (either way) at
 θ_d ≥ 65°; the lobe energy fluctuates by 3 %–11 % from one θ_d bin to the next around a smooth trend.
@@ -144,7 +145,8 @@ lobe is widened ([LATENT_EDIT.md](LATENT_EDIT.md)). Averaging the four equivalen
 (`--sym median`).
 
 Reciprocity asks the same of φ_d and φ_d + 180°. At θ_d 25°–45° the two agree within 20 % (θ_h 1°–10°). At θ_d ≥ 65°
-φ_d 0° reads 1.03–1.57 times φ_d 180° on seven materials and 0.72 times on the black rough plastic.
+φ_d 0° reads 1.03–1.57 times φ_d 180° on seven materials and 0.72 times on the black rough plastic. On the smooth samples
+the break is the ratio of the cosines of the two directions (section 10).
 
 ## 9. Polarization at the specular
 
@@ -161,6 +163,23 @@ usable as measured. The polarization a metal gives the camera under unpolarized 
 (a polarized sky, a second reflection), should come from its n, k. The conclusion of [LU_CHIPMAN.md](LU_CHIPMAN.md) that the
 aluminium's diattenuation exceeds theory at θ_d 60°–79° is part of this problem, not a property of the sample.
 
+## 10. A one-sided cosine in the body
+
+A diffuse body reflects alike when light and camera trade places. Fitting log(table) = log c + a log cos θ_i + b log cos θ_o
+to the bodies of the two white plastics (θ_h ≥ 20°, θ_i and θ_o below 45°, θ_i toward the light and θ_o toward the camera in
+the Mitsuba convention the tables are read with) gives b = 1.14 and 1.21 against a = −0.27 and −0.34, with a residual of
+8 %–10 %: the body falls with the cosine of one direction as if a factor cos θ_o were stored in the table, and hardly with the
+other. The KAIST pBRDF 2020 table of a Spectralon target, from the same group's earlier instrument, shows the same on the other
+direction (a = 0.93, b = −0.20 within 45°, residual 2 %) and its fitted c (normal incidence and exitance) is 0.18 where a Spectralon target's BRDF is
+about 0.31.
+
+A factor cos θ_o alone would break reciprocity by the ratio of the two cosines. For the smooth samples that is what the tables
+show: at θ_d 65°–79° (θ_h 1°–10°) φ_d 0° reads 1.44 times φ_d 180° on black glass, 1.60 on fake gold, 1.33 on the white smooth
+plastic and 1.34 on SUJ2, where the cosines predict 1.57, and dividing by cos θ_o brings the ratio to 0.92–1.05. On the rough
+plastics' lobes it does not (1.03–1.10, and 0.72 on the black one), so the tables do not carry one cosine uniformly. It would
+also account for part of the lobe's energy loss in 5 (a factor cos θ_d at the specular), but not for all of it: the loss
+divided by cos θ_d still falls from 0.50 at θ_d 20° to 0.2–0.3 at 60°–75°. The data cannot settle what the tables store.
+
 ## What to do with the tables
 
 - Use θ_d 20°–80° only; outside it the tables are a fill.
@@ -176,7 +195,7 @@ aluminium's diattenuation exceeds theory at θ_d 60°–79° is part of this pro
 
 Eight of the 14 materials were checked: three metals, black glass and four plastics. The two silicones, the billiard ball and
 the plum, silver and yellow rough plastics are not; the four plastics checked cover smooth against rough and a bright against
-a dark body. The causes of quirks 5, 6, 7 and 9 are not known. The paper's supplementary document, which
+a dark body. The causes of quirks 5, 6, 7, 9 and 10 are not known. The paper's supplementary document, which
 describes the calibration, is not available (not on the authors' page, their GitHub repository, arXiv or the ACM Digital
 Library), so the corrections here are empirical: they rest on the samples' physics (Fresnel, a white body), not on the
 instrument's calibration. The white plastic's true albedo is not known either: "3 to 4
