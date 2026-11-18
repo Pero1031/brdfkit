@@ -120,8 +120,8 @@ constant factor: dividing the whole table by the lobe's K(θ_d) over-corrects it
 geometry (light and camera both 45° from the normal, θ_d set by the azimuth between them) the body changes by −17 % from
 θ_d 21° to 43°, where K changes by −43 %. So the strong θ_d dependence of K is specific to the specular peak, and
 `brdfkit calibrate` must not be applied to a material with a diffuse body. The data set has no diffuse reference (a
-Spectralon-like sample) that would calibrate the body; the paper's supplementary document may describe the radiometric
-calibration.
+Spectralon-like sample) that would calibrate the body, and the paper does not describe its radiometric calibration in enough
+detail to correct it (its supplementary document is not available).
 
 ## 7. Spectrum along θ_d
 
@@ -176,6 +176,8 @@ aluminium's diattenuation exceeds theory at θ_d 60°–79° is part of this pro
 
 Eight of the 14 materials were checked: three metals, black glass and four plastics. The two silicones, the billiard ball and
 the plum, silver and yellow rough plastics are not; the four plastics checked cover smooth against rough and a bright against
-a dark body. The causes of quirks 5, 6, 7 and 9 are not known; the paper's supplementary document, not
-available from the authors' page, may describe the calibration. The white plastic's true albedo is not known either: "3 to 4
+a dark body. The causes of quirks 5, 6, 7 and 9 are not known. The paper's supplementary document, which
+describes the calibration, is not available (not on the authors' page, their GitHub repository, arXiv or the ACM Digital
+Library), so the corrections here are empirical: they rest on the samples' physics (Fresnel, a white body), not on the
+instrument's calibration. The white plastic's true albedo is not known either: "3 to 4
 times too dark" assumes an ordinary white plastic.

@@ -86,8 +86,8 @@ reads its own assets from (it prints a harmless warning about a missing gold tab
   Its strong θ_d dependence belongs to the specular lobe: a diffuse body is dark by a nearly constant factor that the data set
   cannot calibrate ([QUIRKS.md](QUIRKS.md)). The spectral errors of the glass do not repeat on aluminium, so S is not corrected.
 - The floor's source (dark/bias residual or ambient light) and the irregular θ_d dependence of the spectrum S, which is
-  specific to the specular peak (the body's spectrum is regular, [QUIRKS.md](QUIRKS.md)) — the supplementary document of
-  the paper may say.
+  specific to the specular peak (the body's spectrum is regular, [QUIRKS.md](QUIRKS.md)). The paper's supplementary
+  document, which describes the calibration, is not available.
 - The shoulders of the lobe (θ_h 5°–20°) and the far field do not follow the factor model; they are dark, but a second,
   depolarized component would be the refinement.
 - Edits keep S and N; physically, roughening a surface also depolarizes it.
