@@ -21,7 +21,7 @@ as measured.
 | 2. Know the measurement | — | [LU_CHIPMAN.md](LU_CHIPMAN.md), [HPBRDF_ON_MERL.md](HPBRDF_ON_MERL.md), [LATENT_EDIT.md](LATENT_EDIT.md#the-streak-a-one-sided-arm-of-the-measured-lobe) | only θ_d ≈ 20°–80° is measured (the rest is inpainted); the specular peak is flat within 0.28° (angular resolution); the lobes have one-sided arms in φ_d that an isotropic material cannot have; every lobe is the instrument's response (black glass: half width 1.1° at θ_d 20°–30°, wider at larger θ_d) convolved with the surface |
 | 3. Remove the instrument floor | `brdfkit floor`, `--floor` | [FLOOR.md](FLOOR.md) | an unpolarized offset of about 0.006 sr⁻¹ (550 nm), larger in the blue; without removal the materials render bluish and polarization is diluted |
 | 4. Factor the table | `brdfkit factor` | [FACTOR.md](FACTOR.md) | m00 = A(angles) × S(θ_d, λ), m_ij/m00 = N(θ_d, λ): 6.8 MB, 6% m00 and 0.01 polarization error near the specular ridge |
-| 4b. Calibrate on black glass | `brdfkit calibrate`, `edit --calib` | [CALIBRATION.md](CALIBRATION.md) | the tables carry 0.47 (θ_d 20°) to 0.08 (75°) of the Fresnel energy, for glass and aluminium alike; dividing by this K brings aluminium within 0–15% of its Fresnel reflectance |
+| 4b. Calibrate on black glass | `brdfkit calibrate`, `edit --calib` | [CALIBRATION.md](CALIBRATION.md) | the tables carry 0.47 (θ_d 20°) to 0.08 (75°) of the Fresnel energy, for glass and aluminium alike; dividing by this K brings aluminium within 0–15% of its Fresnel reflectance; a third material (steel) agrees up to θ_d ≈ 50° and departs by up to 30% beyond |
 | 5. MERL latent space | `brdfkit merl-pca` | [MERL_PCA.md](MERL_PCA.md) | PCA of the 100 MERL materials (log mapping); PC1 specular/diffuse, PC2 brightness, PC3 lobe width |
 | 6. Edit | `brdfkit edit` | [LATENT_EDIT.md](LATENT_EDIT.md) | A symmetrized over φ_d and moved along MERL components, S and N kept, albedo kept: mirror-like to satin aluminium |
 | 6b. Swap the optics | `brdfkit swap` | [SWAP.md](SWAP.md) | the lobe shape of one material with the colour, polarization and reflectance of another (aluminium → gold, steel, black glass) |
@@ -81,8 +81,8 @@ reads its own assets from (it prints a harmless warning about a missing gold tab
 
 ## What is not settled
 
-- The cause of the radiometric error K(θ_d) (an illumination-angle calibration or cosine factors in the tables) and its
-  value beyond θ_d 65° ([CALIBRATION.md](CALIBRATION.md)); the spectral errors of the glass do not repeat on aluminium, so S is not corrected.
+- The cause of the radiometric error K(θ_d) (an illumination-angle calibration or cosine factors in the tables), and why
+  it differs between materials beyond θ_d 55° ([CALIBRATION.md](CALIBRATION.md)); the spectral errors of the glass do not repeat on aluminium, so S is not corrected.
 - The floor's source (dark/bias residual or ambient light) and the irregular θ_d dependence of the spectrum S
   (a calibration difference between illumination angles is suspected) — the supplementary document of the paper may say.
 - The shoulders of the lobe (θ_h 5°–20°) and the far field do not follow the factor model; they are dark, but a second,

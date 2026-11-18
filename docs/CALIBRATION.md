@@ -3,12 +3,15 @@
 A polished dielectric reflects exactly as Fresnel predicts from one real index n(λ), and the hpBRDF set contains one:
 black glass. Comparing it with Fresnel shows how far the tables are from a correctly scaled, correctly polarized BRDF.
 Comparing a second material with a known index (aluminium) separates errors of the instrument (common to both) from
-properties of the samples. Implementation in `brdfkit/analysis/calibrate.py`.
+properties of the samples, and a third (SUJ2 bearing steel) shows over which range of angles that separation holds.
+Implementation in `brdfkit/analysis/calibrate.py`.
 
 ```bash
 python -m brdfkit factor    data/kaist/hpbrdf/Black_glass.hpbrdf --out out/factor/Black_glass.npz --floor out/floor/Black_glass_floor.npz
 python -m brdfkit calibrate out/factor/Black_glass_s0.npz --out out/calib/black_glass_cal.npz \
                             --check out/factor/Aluminum_s0.npz --refidx data/kaist/refidx/Al_Rakic.yml --film-nm 20
+python -m brdfkit calibrate out/factor/Black_glass_s0.npz --out out/calib/check_SUJ2/cal.npz \
+                            --check out/factor/SUJ2_s0.npz --refidx data/kaist/refidx/Fe_Johnson.yml   # third material
 python -m brdfkit edit      out/factor/Aluminum_s0.npz --model out/merl_analysis/log/merl_pca.npz --out out/calib/Aluminum_sym_cal.npz \
                             --calib out/calib/black_glass_cal.npz          # no shift: the cleaned, calibrated material
 ```
@@ -56,8 +59,37 @@ beyond. K estimated from the glass:
 
 Correcting the aluminium with the glass's K brings its albedo / Fresnel from 0.43–0.10 to **1.01, 1.05, 1.00, 0.92,
 0.85, 0.86** at 25°–75°. This check is independent, because the aluminium was not used to estimate K. At 65°–75° the
-remaining shortfall is about 15%. Energy that would leave below the horizon is lost there, θ_d > 79° is inpainted, and
-the integral over θ_h < 10° depends on the cut-off near grazing (5° instead of 10° lowers K at 75° by 25%).
+remaining shortfall is about 15%. The third material below shows that this shortfall is not a systematic loss of the
+method: beyond 55° the materials leave the glass's K in opposite directions.
+
+### A third material: the correction holds up to about 50°
+
+SUJ2 (bearing steel) has no tabulated index of its own; iron (Johnson & Christy 1974, refractiveindex.info, no film) is
+the nearest. Its Fresnel reflectance is flat over angle (luminance 0.516 at 25°, 0.497 at 65°, 0.505 at 75°), so a
+different index or alloy would shift the level but hardly the trend over angle. Same factor model settings and floor as
+the aluminium:
+
+| Incidence | 25° | 35° | 45° | 55° | 65° | 75° |
+|---|---|---|---|---|---|---|
+| SUJ2: albedo / Fresnel, as delivered | 0.38 | 0.31 | 0.23 | 0.19 | 0.16 | 0.13 |
+| SUJ2: albedo / Fresnel, calibrated | 0.90 | 0.88 | 0.90 | 1.01 | 1.15 | 1.29 |
+| Aluminium: albedo / Fresnel, calibrated | 1.01 | 1.05 | 1.00 | 0.92 | 0.85 | 0.86 |
+
+- The large fall (a factor 3–5 between 25° and 75°) is common to all three materials, so the main error belongs to the
+  tables.
+- From 25° to 45° the calibrated steel is flat at 0.89. The 11% offset is within what iron's index can say about a
+  bearing steel.
+- Beyond 55° the steel is over its Fresnel reflectance (up to +29%) where the aluminium is under it (−15%). The excess
+  sits in the lobe itself: the lobe energy within θ_h < 10°, divided by Fresnel and K, gives 0.80, 0.74, 0.77, 0.93,
+  1.05, 1.36 for the steel and 0.85, 0.88, 0.84, 0.74, 0.68, 0.81 for the aluminium at the same angles.
+- Along θ_d in 1° bins, after a smooth (cubic) trend is removed, the lobe energy wiggles by 3%–11% (RMS of the log).
+  The wiggles of aluminium and steel correlate (r = 0.78), as do those of black glass and the fake gold (0.59); the other
+  pairs do not (0.17–0.29). The pairs share a lobe width (1.9° and 1.3°), which points to how the table fills its bins
+  between the 2.5° steps of the illumination, but this is not established.
+
+So K is a correction common to the materials within about ±10%–15% for θ_d 20°–50°. Beyond 55° each material carries its
+own error of ±20%–35%, which a reference measured on another sample cannot remove. Stimuli that rely on absolute energy
+are safest with light–camera angles up to 100° (θ_d ≤ 50°).
 
 The cause is not known. Candidates are an illumination-angle-dependent radiometric calibration, or tables that already
 contain cosine factors. The Mitsuba 3 `measured_polarized` plugin, whose file format the hpBRDF release uses, multiplies
@@ -132,3 +164,5 @@ holds. The excess diattenuation at 20°–30° is within the instrument's error.
 - The correction depends on θ_d only. That is the right form for an error per illumination angle. If the tables carry
   cosine factors of θ_i and θ_o instead, the shoulders of a broad lobe (θ_h ≫ 1°) are corrected only approximately.
 - Beyond 65° the estimate depends on the θ_h cut-off, and beyond 79° it is copied from the edge.
+- Beyond 55° the error differs between materials by ±20%–35% (aluminium under, steel over), so there K corrects only the
+  common part.
