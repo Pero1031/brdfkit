@@ -155,7 +155,9 @@ physical model is the better route.
   the same drift (|m02| ≤ 0.08), so it is not a single rotation of the polarizer frames.
 
 For the aluminium analysis ([LU_CHIPMAN.md](LU_CHIPMAN.md)), this means the 20 nm oxide film, read from the retardance,
-holds. The excess diattenuation at 20°–30° is within the instrument's error. The excess at 60°–79° is beyond it.
+holds. The excess diattenuation at 20°–30° is within the instrument's error. The excess at 60°–79° is beyond it, but the
+metals' diattenuation disagrees with Fresnel in general while the dielectrics' agrees ([QUIRKS.md](QUIRKS.md)), so that
+excess is not a property of the sample either.
 
 ## Limits
 
@@ -166,3 +168,6 @@ holds. The excess diattenuation at 20°–30° is within the instrument's error.
 - Beyond 65° the estimate depends on the θ_h cut-off, and beyond 79° it is copied from the edge.
 - Beyond 55° the error differs between materials by ±20%–35% (aluminium under, steel over), so there K corrects only the
   common part.
+- The θ_d dependence of K belongs to the specular lobe. The diffuse body of the white smooth plastic is dark by a nearly
+  constant factor (albedo 0.22–0.26 at every incidence), and dividing it by K over-corrects it (1.10 at 75°). Apply the
+  correction to specular materials (metals, glass) only ([QUIRKS.md](QUIRKS.md)).

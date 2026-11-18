@@ -22,6 +22,8 @@ brdfkit command line.
                     [--floor FLOOR.npz] [--floor-keep 0.02]
   brdfkit merl-subsets MERL_GRID.npz MERL_DIR --out DIR [--all-model MERL_PCA.npz] [--random 30] [--seed 0] [--ablate]
   brdfkit merl-compare RUN_DIR [RUN_DIR ...]      (summary of several merl-project outputs)
+  brdfkit quirks    TABLE|REDUCED.npz --out REDUCED.npz [--dielectric | --nk NK.yml [--film-nm 20]] [--name NAME]
+                    (inpainting, floor, radiometric, spectral, phi_d and polarization quirks of a measured table, docs/QUIRKS.md)
 
 TABLE: .hpbrdf / .pbsdf (Mitsuba tensor_file), .mat (KAIST pBRDF 2020), .binary (MERL), .npz (factor model of `brdfkit factor`).
 """
@@ -113,6 +115,13 @@ def main(argv=None):
     p.add_argument('--random', type=int, default=30, help='random control subsets per size'); p.add_argument('--seed', type=int, default=0)
     p.add_argument('--ablate', action='store_true', help='refit without each material in turn (100 fits)')
     p = sub.add_parser('merl-compare', help='summarize several merl-project output folders'); p.add_argument('run_dirs', nargs='+')
+    p = sub.add_parser('quirks', help='check a measured table for inpainting, floor, radiometric, spectral, phi_d and polarization quirks')
+    p.add_argument('table', help='measured table, or the reduction (.npz) a previous run wrote'); p.add_argument('--out', required=True, help='reduction .npz (and .txt report)')
+    p.add_argument('--name', default=None, help='name in the report (default: the file name)')
+    g = p.add_mutually_exclusive_group()
+    g.add_argument('--dielectric', action='store_true', help='fit the index from the specular polarization and compare the lobe energy with its Fresnel')
+    g.add_argument('--nk', default=None, help='n, k table (.yml) of a metal for the Fresnel comparison')
+    p.add_argument('--film-nm', type=float, default=0.0, help='dielectric film on the metal (nm)')
     a = ap.parse_args(argv)
 
     if a.cmd == 'info':
@@ -212,6 +221,19 @@ def main(argv=None):
     elif a.cmd == 'merl-compare':
         from .analysis.merl_project import compare_runs
         compare_runs(a.run_dirs)
+    elif a.cmd == 'quirks':
+        from .analysis import quirks as QK
+        if a.table.endswith('.npz'):
+            red = QK.load(a.table)
+        else:
+            from .io import load
+            red = QK.reduce(load(a.table)); QK.save(a.out, red); red = QK.load(a.out)
+        optics = ('dielectric',) if a.dielectric else (('metal', a.nk, a.film_nm) if a.nk else None)
+        lines = []
+        QK.report(a.name or os.path.splitext(os.path.basename(a.table))[0], QK.measure(red, optics), say=lambda s: (print(s), lines.append(s)))
+        base = a.out[:-4] if a.out.endswith('.npz') else a.out
+        open(base + '.txt', 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+        print('wrote', base + '.txt')
 
 
 if __name__ == '__main__':

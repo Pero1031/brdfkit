@@ -110,7 +110,8 @@ showed it faintly too. It is in the measured tables, not made by the edit:
 - The direction differs between materials while the instrument geometry is the same, so the arms are not one fixed
   instrument artifact (such as a ghost at a fixed place). Per-sample anisotropy (polishing or machining marks) or
   per-sample optics are possible. SUJ2's pattern, one diagonal bright and the perpendicular one dark, is what an
-  anisotropic surface gives.
+  anisotropic surface gives. The white smooth plastic, a moulded surface, has no arm (1.1 times its mirror image) and the red rough
+  plastic a weak one (1.4) ([QUIRKS.md](QUIRKS.md)), so the arms are most likely the samples' own.
 - Separately, at θ_d ≥ 65° all four materials are 3–7 times brighter at φ_d = 0° than at 180° (light and camera swapped).
   This reciprocity break is common to all materials, so it more likely comes from the instrument or the processing.
 

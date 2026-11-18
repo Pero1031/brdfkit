@@ -23,6 +23,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Latent editing | `brdfkit edit`, `examples/latent_demo.py` | Move the grey lobe of a factor model along the MERL PCA, keeping the measured spectrum and polarization: materials that were never measured. The lobe is first symmetrized over φ_d, which removes a streak the measured tables carry. [docs/LATENT_EDIT.md](docs/LATENT_EDIT.md) |
 | Material swap | `brdfkit swap` | Keep the lobe shape of one material and take the colour (S), polarization (N) and reflectance of another, or of Fresnel from n, k: aluminium becomes gold, steel or black glass within 3% of the measured luminance and colour. [docs/SWAP.md](docs/SWAP.md) |
 | Gloss knob | `brdfkit gloss` | Roughen a lobe to a target width (half width, or GGX-equivalent roughness) by convolving its microfacet slopes: one physical parameter that means the same for every material, colour and polarization kept. The measured lobes are the instrument's response (black glass, 1.1°) convolved with the surface. [docs/GLOSS.md](docs/GLOSS.md) |
+| Quirks of a measured table | `brdfkit quirks` | One pass over a table, then the checks that matter before using it: inpainted angles, smoothing, the instrument's angular response, the floor, the radiometric scale against Fresnel, the spectrum along θ_d, one-sided φ_d arms, reciprocity, and the specular polarization against Fresnel. Results for six hpBRDF materials in [docs/QUIRKS.md](docs/QUIRKS.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
 ## Usage
@@ -59,12 +60,12 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss},
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss, quirks},
                  color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            WALKTHROUGH.md (start here), PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
+docs/            WALKTHROUGH.md (start here), QUIRKS.md, PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
 examples/        latent_demo.py: the whole chain from the downloaded data to rendered edits
 data/, out/      datasets and derived files; not tracked by git
 ```

@@ -2,7 +2,8 @@
 
 This page ties the pieces of brdfkit together: what was done to the hpBRDF data, in which order, why, and how to repeat it
 after downloading the datasets yourself. The datasets and everything derived from them stay out of the repository
-([LICENSES.md](../LICENSES.md)); `examples/latent_demo.py` rebuilds the demo from the downloads.
+([LICENSES.md](../LICENSES.md)); `examples/latent_demo.py` rebuilds the demo from the downloads. Before using the tables for
+anything, see [QUIRKS.md](QUIRKS.md): where they depart from a physical surface, on six materials.
 
 ## The question
 
@@ -81,13 +82,15 @@ reads its own assets from (it prints a harmless warning about a missing gold tab
 
 ## What is not settled
 
-- The cause of the radiometric error K(θ_d) (an illumination-angle calibration or cosine factors in the tables), and why
-  it differs between materials beyond θ_d 55° ([CALIBRATION.md](CALIBRATION.md)); the spectral errors of the glass do not repeat on aluminium, so S is not corrected.
-- The floor's source (dark/bias residual or ambient light) and the irregular θ_d dependence of the spectrum S
-  (a calibration difference between illumination angles is suspected) — the supplementary document of the paper may say.
+- The cause of the radiometric error K(θ_d), and why it differs between materials beyond θ_d 55° ([CALIBRATION.md](CALIBRATION.md)).
+  Its strong θ_d dependence belongs to the specular lobe: a diffuse body is dark by a nearly constant factor that the data set
+  cannot calibrate ([QUIRKS.md](QUIRKS.md)). The spectral errors of the glass do not repeat on aluminium, so S is not corrected.
+- The floor's source (dark/bias residual or ambient light) and the irregular θ_d dependence of the spectrum S, which is
+  specific to the specular peak (the body's spectrum is regular, [QUIRKS.md](QUIRKS.md)) — the supplementary document of
+  the paper may say.
 - The shoulders of the lobe (θ_h 5°–20°) and the far field do not follow the factor model; they are dark, but a second,
   depolarized component would be the refinement.
 - Edits keep S and N; physically, roughening a surface also depolarizes it.
-- The source of the one-sided φ_d arms of the lobes: their direction differs between materials, so per-sample anisotropy or
-  optics rather than one fixed instrument artifact. The symmetrization removes one-sided arms (aluminium) but only halves
+- The source of the one-sided φ_d arms of the lobes: their direction differs between materials and a moulded plastic has
+  none, so most likely the samples' anisotropy rather than an instrument artifact ([QUIRKS.md](QUIRKS.md)). The symmetrization removes one-sided arms (aluminium) but only halves
   structure present at both φ_d and φ_d + 180° (SUJ2, Fake gold, black glass).

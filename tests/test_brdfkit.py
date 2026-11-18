@@ -27,6 +27,7 @@ from brdfkit.analysis import latent_edit as LE                 # noqa: E402
 from brdfkit.analysis import calibrate as CA                  # noqa: E402
 from brdfkit.analysis import swap as SW                       # noqa: E402
 from brdfkit.analysis import gloss as GL                      # noqa: E402
+from brdfkit.analysis import quirks as QK                     # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -687,3 +688,31 @@ def test_gloss():
         GL.set_gloss(tgt, hwhm=3.0, sym='none'); raise AssertionError('a narrower target was accepted')
     except ValueError:
         pass
+
+
+def test_quirks():
+    """a synthetic glass with a known radiometric error K, an inpainted (copied) range below 10 deg and a one-sided arm:
+    the checks give back K, the index, Fresnel's polarization with row = column, the edge of the flat range and the arm"""
+    K = lambda t: 0.5 * np.cos(t) ** 2 + 0.05
+    n_true = np.full(4, 1.5)
+    glass = _fresnel_model(n_true, K, width_deg=0.8)
+    td = glass['theta_d']; tdd = np.degrees(td); thd = np.degrees(glass['theta_h']); ph = np.degrees(glass['phi_d'])
+    A = np.array(glass['A'])
+    A[:, tdd < 10] = A[:, [int(np.argmin(abs(tdd - 10)))]]                            # "inpainted": a copy of the 10 deg bin
+    shoulder = (thd >= 6) & (thd <= 15)
+    A[:, :, shoulder] += 1e-3                                                         # a symmetric shoulder ...
+    A[int(np.argmin(abs(ph - 30))), :, :][:, shoulder] *= 4                           # ... four times higher at phi_d = +30 deg
+    glass['A'] = A
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 'red.npz')
+        QK.save(p, QK.reduce(FA.view(glass), log=None))
+        m = QK.measure(QK.load(p), ('dielectric',))
+    meas = (tdd >= 20) & (tdd <= 75)
+    assert round(m['flat_ranges'][1e-4][0]) == 10, m['flat_ranges']                 # the copied bins change by 0
+    assert abs(m['n_fit_median'] - 1.5) < 2e-3 and m['n_fit_rms'] < 2e-3
+    assert np.allclose(m['energy_over_fresnel'][meas], K(td[meas]), rtol=0.02)        # the shoulder adds about 1 %
+    assert np.allclose(m['N01_550'][meas], m['N01_fresnel_550'][meas], atol=2e-3) and np.allclose(m['N01_550'][meas], m['N10_550'][meas], atol=1e-6)
+    a = m['arms'][25.0]
+    assert round(a['phi']) == 30 and a['arm_over_mirror'] > 3.5, a
+    assert abs(m['reciprocity_0_over_180'] - 1) < 1e-6
+    return f"K at 45 deg {m['energy_over_fresnel'][45]:.4f} (true {K(td[45]):.4f}), arm x{a['arm_over_mirror']:.2f}"

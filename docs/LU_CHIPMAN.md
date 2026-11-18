@@ -71,7 +71,10 @@ the value at the measured edge. Whether D goes to 0 at normal incidence cannot b
 **Checked against black glass** ([CALIBRATION.md](CALIBRATION.md)). The hpBRDF black glass should follow Fresnel of a
 dielectric exactly. Its D at 550 nm is off by −0.18 to +0.05 at θ = 20°–30°, and by at most 0.09 at 60°–79°. So the
 aluminium's excess of about 0.09 at 20°–30° is within the instrument's error there and is not established as a property
-of the sample. Its excess of 0.22–0.30 at 60°–79° is larger than the glass error and stands.
+of the sample. Its excess of 0.22–0.30 at 60°–79° is larger than the glass error. Later checks on six materials
+([QUIRKS.md](QUIRKS.md)) withdraw it too: three dielectrics follow Fresnel, but the metals' diattenuation does not, in
+both directions (aluminium five times too high, SUJ2 eight times too low against iron), and differs from their
+polarizance. The excess is a problem of the metal measurements, not a property of this sample.
 
 D is also noisy along wavelength (`lu_chipman_spectral.png`, left).
 The film barely changes D (the dashed film curve is almost identical to the dotted bare one), so **the thickness information comes from R alone**.
@@ -97,7 +100,7 @@ strictly isotropic or reciprocal; harmless for rendering, but analyses should av
 | Quantity | Measured vs ideal Al | Interpretation |
 |---|---|---|
 | Retardance R | principal angle 8–10° lower | explained by a 15–25 nm dielectric (oxide) film |
-| Diattenuation D | 3 to almost 30× larger; about 0.1 already at 20°, where Al gives < 0.01 | at 20°–30° within the instrument error seen on black glass; at 60°–79° (0.22–0.30 too high) beyond it: sample anisotropy or roughness |
+| Diattenuation D | 3 to almost 30× larger; about 0.1 already at 20°, where Al gives < 0.01 | at 20°–30° within the instrument error seen on black glass; at 60°–79° (0.22–0.30 too high) beyond it, but the metals' diattenuation disagrees with Fresnel in general ([QUIRKS.md](QUIRKS.md)): not a property of the sample |
 | Depolarization Δ | 0–0.17 on the ridge, above 0.5 in the tails | multiple scattering from roughness; 0 for ideal Fresnel |
 
 What the 32 PCA components could not say, "where does the sample deviate from the ideal", the decomposition separates:
