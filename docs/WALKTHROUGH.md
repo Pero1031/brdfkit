@@ -3,7 +3,7 @@
 This page ties the pieces of brdfkit together: what was done to the hpBRDF data, in which order, why, and how to repeat it
 after downloading the datasets yourself. The datasets and everything derived from them stay out of the repository
 ([LICENSES.md](../LICENSES.md)); `examples/latent_demo.py` rebuilds the demo from the downloads. Before using the tables for
-anything, see [QUIRKS.md](QUIRKS.md): where they depart from a physical surface, on six materials.
+anything, see [QUIRKS.md](QUIRKS.md): where they depart from a physical surface, on eight materials.
 
 ## The question
 

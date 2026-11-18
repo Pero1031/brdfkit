@@ -71,7 +71,7 @@ the value at the measured edge. Whether D goes to 0 at normal incidence cannot b
 **Checked against black glass** ([CALIBRATION.md](CALIBRATION.md)). The hpBRDF black glass should follow Fresnel of a
 dielectric exactly. Its D at 550 nm is off by −0.18 to +0.05 at θ = 20°–30°, and by at most 0.09 at 60°–79°. So the
 aluminium's excess of about 0.09 at 20°–30° is within the instrument's error there and is not established as a property
-of the sample. Its excess of 0.22–0.30 at 60°–79° is larger than the glass error. Later checks on six materials
+of the sample. Its excess of 0.22–0.30 at 60°–79° is larger than the glass error. Later checks on eight materials
 ([QUIRKS.md](QUIRKS.md)) withdraw it too: three dielectrics follow Fresnel, but the metals' diattenuation does not, in
 both directions (aluminium five times too high, SUJ2 eight times too low against iron), and differs from their
 polarizance. The excess is a problem of the metal measurements, not a property of this sample.
