@@ -2,7 +2,8 @@
 
 `brdfkit to-mitsuba` writes any table brdfkit can read (a measured hpBRDF table, or a factor model that was calibrated,
 edited, swapped or roughened) as a `tensor_file` that the `measured_polarized` plugin of Mitsuba 3 loads, with the
-corrections of [QUIRKS.md](QUIRKS.md) applied on the way. The 13 GB are streamed, one φ_d slice at a time.
+corrections of [QUIRKS.md](QUIRKS.md) applied on the way. The 13 GB are streamed, one φ_d slice at a time (about four
+minutes for a full table, which comes out the size of the original).
 
 ```bash
 # once: the floor and the factor g(theta_d), both from black glass
