@@ -31,6 +31,7 @@ from brdfkit.analysis import quirks as QK                     # noqa: E402
 from brdfkit.analysis import slots as SL                      # noqa: E402
 from brdfkit.analysis import clean as CL                      # noqa: E402
 from brdfkit.analysis import umov as UM                       # noqa: E402
+from brdfkit.analysis import predict as PR                    # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -839,3 +840,45 @@ def test_umov():
         assert abs(r['umov_slope'] + 1) < 0.02, r['umov_slope']
     lines = []; UM.report('synthetic', lam2, rows, n=1.5, say=lines.append)
     assert len(lines) > 20
+
+
+def test_predict():
+    """synthetic two-component plastics: a black one (surface + floor), a white one (the same surface + a body) and a
+    coloured one (body x a spectrum). The interpolation from one far-field spectrum gives the coloured one back, the tint
+    does not; a target with a narrower lobe is recovered at the specular once its width is read"""
+    lam = np.arange(414.0, 951.0, 8.0); td = np.radians(np.arange(0, 91, 1.0)); nT, nC = len(td), len(lam)
+    c = 0.006 * (1 + 3 * ((lam - 600) / 250) ** 2)
+    pig = 0.03 + 0.9 / (1 + np.exp(-(lam - 600) / 10))                                # the target's body relative to the white's
+    D, C = UM.fresnel_ratios(td, 1.5)
+    e00 = np.zeros((4, 4)); e00[0, 0] = 1
+    nb = e00.copy(); nb[1, 0] = -0.05                                                 # the body: depolarized, a little polarizance
+
+    def surface(level):
+        S = np.zeros((nT, 4, 4)); m11 = level * (1 + np.sin(td))
+        S[:, 0, 0] = S[:, 1, 1] = m11; S[:, 0, 1] = S[:, 1, 0] = D * m11; S[:, 2, 2] = S[:, 3, 3] = C * m11
+        return S[:, None]
+
+    def reduction(body, peak=1.0):
+        red = dict(channels=lam, theta_d=td, theta_h=(np.arange(91) / 90.0) ** 2 * (np.pi / 2))
+        for reg, s_lvl, b_lvl in (('core', 0.15 * peak, 0.05), ('mid', 0.003, 0.05), ('far', 0.0005, 0.04)):
+            M = surface(s_lvl) + (b_lvl * np.cos(td))[:, None, None, None] * body[None, :, None, None] * nb + (0.8 * c)[None, :, None, None] * e00
+            red[f'{reg}_M'] = M * 7.0; red[f'{reg}_n'] = np.full(nT, 7.0)
+        return red
+    glass = dict(channels=lam, theta_d=td)
+    for reg in PR.REGIONS:
+        glass[f'{reg}_M'] = np.broadcast_to(c[None, :, None, None] * e00, (nT, nC, 4, 4)) * 7.0; glass[f'{reg}_n'] = np.full(nT, 7.0)
+    W, B, G = (PR.means(x) for x in (reduction(np.ones(nC)), reduction(np.zeros(nC)), glass))
+    tdd = np.degrees(td)
+    for peak in (1.0, 2.0):
+        T = PR.means(reduction(pig, peak))
+        preds, r = PR.predict(T['far'][30, :, 0, 0], W, B, G, tdd, peak=np.full(nT, peak))
+        assert np.allclose(r, pig, rtol=1e-9)
+        sc = PR.score(preds['interp'], T, tdd, lam)
+        for reg in PR.REGIONS:
+            # at the core the body's own small polarization is not modelled (2e-3 here); elsewhere the interpolation is exact
+            assert sc[reg]['m00_factor'] < 1.0001 and sc[reg]['pol_rms'] < (5e-3 if reg == 'core' else 1e-6), (peak, reg, sc[reg])
+        st = PR.score(preds['tint'], T, tdd, lam)
+        assert st['mid']['dop_rms'] > 0.05 and st['core']['m00_rms_log'] > 0.5          # the tint dims the highlight and keeps the white's polarization
+    flat, _ = PR.predict(T['far'][30, :, 0, 0], W, B, G, tdd)                                     # without the width: the peak is half too low
+    assert abs(PR.score(flat['interp'], T, tdd, lam)['core']['m00_factor'] - 2.0) < 0.2
+    assert abs(PR.peak_factor(np.array([30.0]), 2.0, 1.5, 4.0, 1.5)[0] - 4.0) < 1e-12

@@ -28,6 +28,8 @@ brdfkit command line.
                     (a table or factor model, corrected, as a tensor_file for Mitsuba 3 `measured_polarized`, docs/MITSUBA.md)
   brdfkit umov      REDUCED.npz --reference GLASS_REDUCED.npz [--dark-max 540] [--region mid|far] [--n 1.505] [--out REPORT.txt]
                     (surface and body of a coloured dielectric split by polarization, on quirks reductions, docs/UMOV.md)
+  brdfkit predict   TARGET_REDUCED.npz --white W.npz --black B.npz --glass G.npz [--read-theta-d 30] [--out REPORT.txt]
+                    (a coloured plastic predicted from a black and a white one and a spectrum, scored against its table, docs/PREDICT.md)
   brdfkit slots     TABLE|REDUCED.npz --out REDUCED.npz [--bands 550,700] [--phi-step 6] [--theta-h-min 15] [--name NAME]
                     (which of the table's two directions is the light, from the polarization of a diffuse body, docs/SLOTS.md)
 
@@ -150,6 +152,11 @@ def main(argv=None):
                    help='reduction of a dark sample (black glass): the spectrum of the floor')
     p.add_argument('--dark-max', type=float, default=540.0, help='the body is taken as black below this wavelength [nm]')
     p.add_argument('--region', choices=('mid', 'far'), default='mid'); p.add_argument('--n', type=float, default=None, help='index, for the Fresnel columns')
+    p.add_argument('--out', default=None, help='report (.txt)'); p.add_argument('--name', default=None)
+    p = sub.add_parser('predict', help='predict a coloured plastic from a black and a white one and score it, on quirks reductions')
+    p.add_argument('target', help='reduction (.npz) of `brdfkit quirks` of the plastic to predict (also the ground truth)')
+    p.add_argument('--white', required=True); p.add_argument('--black', required=True); p.add_argument('--glass', required=True)
+    p.add_argument('--read-theta-d', type=float, default=30.0, help='theta_d [deg] of the one far-field spectrum taken from the target')
     p.add_argument('--out', default=None, help='report (.txt)'); p.add_argument('--name', default=None)
     a = ap.parse_args(argv)
 
@@ -281,6 +288,13 @@ def main(argv=None):
         print(f'{t.describe()}; corrections: {CL.describe(t.meta)}')
         hpbrdf.write_table(a.output, t, phi, ch, log=print)
         print(f'wrote {a.output}: {len(phi)}x{t.n_thd}x{t.n_thh} bins, {len(ch)} wavelengths, {os.path.getsize(a.output) / 2 ** 30:.2f} GB')
+    elif a.cmd == 'predict':
+        from .analysis import quirks as QK, predict as PR
+        res = PR.run(*(QK.load(x) for x in (a.target, a.white, a.black, a.glass)), a.read_theta_d)
+        lines = []
+        PR.report(a.name or os.path.splitext(os.path.basename(a.target))[0], res, say=lambda s: (print(s), lines.append(s)))
+        if a.out:
+            open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
     elif a.cmd == 'umov':
         from .analysis import quirks as QK, umov as UM
         lam, rows = UM.split(QK.load(a.reduced), QK.load(a.reference), a.region, a.dark_max)
