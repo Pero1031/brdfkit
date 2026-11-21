@@ -30,6 +30,8 @@ brdfkit command line.
                     (surface and body of a coloured dielectric split by polarization, on quirks reductions, docs/UMOV.md)
   brdfkit predict   TARGET_REDUCED.npz --white W.npz --black B.npz --glass G.npz [--read-theta-d 30] [--out REPORT.txt]
                     (a coloured plastic predicted from a black and a white one and a spectrum, scored against its table, docs/PREDICT.md)
+  brdfkit ellipso   REDUCED.npz --candidates NK.yml [NK.yml ...] [--factor MODEL.npz --calib CAL.npz] [--out REPORT.txt]
+                    (phase of the specular reflection, pseudo n and k, ranking of candidate materials, docs/ELLIPSO.md)
   brdfkit slots     TABLE|REDUCED.npz --out REDUCED.npz [--bands 550,700] [--phi-step 6] [--theta-h-min 15] [--name NAME]
                     (which of the table's two directions is the light, from the polarization of a diffuse body, docs/SLOTS.md)
 
@@ -158,6 +160,11 @@ def main(argv=None):
     p.add_argument('--white', required=True); p.add_argument('--black', required=True); p.add_argument('--glass', required=True)
     p.add_argument('--read-theta-d', type=float, default=30.0, help='theta_d [deg] of the one far-field spectrum taken from the target')
     p.add_argument('--out', default=None, help='report (.txt)'); p.add_argument('--name', default=None)
+    p = sub.add_parser('ellipso', help='the specular reflection as an ellipsometer: phase, pseudo n and k, and a ranking of candidate materials')
+    p.add_argument('reduced', help='reduction (.npz) of `brdfkit quirks`'); p.add_argument('--candidates', nargs='+', required=True, help='n, k tables (.yml)')
+    p.add_argument('--factor', default=None, help='factor model of the same table: adds the colour and the level to the ranking (needs --calib)')
+    p.add_argument('--calib', default=None, help='calibration built with the same settings as the factor model')
+    p.add_argument('--n-film', type=float, default=1.5); p.add_argument('--out', default=None, help='report (.txt)'); p.add_argument('--name', default=None)
     a = ap.parse_args(argv)
 
     if a.cmd == 'info':
@@ -293,6 +300,21 @@ def main(argv=None):
         res = PR.run(*(QK.load(x) for x in (a.target, a.white, a.black, a.glass)), a.read_theta_d)
         lines = []
         PR.report(a.name or os.path.splitext(os.path.basename(a.target))[0], res, say=lambda s: (print(s), lines.append(s)))
+        if a.out:
+            open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
+    elif a.cmd == 'ellipso':
+        from .analysis import quirks as QK, ellipso as EL
+        name = a.name or os.path.splitext(os.path.basename(a.reduced))[0]
+        cands = {os.path.splitext(os.path.basename(c))[0]: c for c in a.candidates}
+        lines = []; say = lambda s: (print(s), lines.append(s))      # noqa: E731
+        meas = EL.delta(QK.load(a.reduced))
+        EL.report(name, meas, EL.match(meas, cands, n_film=a.n_film), EL.fit_nk(meas['theta_d'], meas['delta']), say)
+        if a.factor:
+            if not a.calib:
+                raise SystemExit('--factor needs --calib')
+            from .analysis import factor as F, calibrate as CA
+            refl = EL.specular_reflectance(F.load(a.factor), CA.load(a.calib))
+            EL.report_identify(name, refl, EL.identify(meas, refl, cands, n_film=a.n_film), say)
         if a.out:
             open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
     elif a.cmd == 'umov':

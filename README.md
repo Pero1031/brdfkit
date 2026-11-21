@@ -27,6 +27,7 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Which direction is the light | `brdfkit slots`, `--exchange` | The polarization of a diffuse body tells light from camera without a reference: the hpBRDF tables are filed at φ_d + 180° relative to the Mitsuba reader. [docs/SLOTS.md](docs/SLOTS.md) |
 | Surface and body by polarization | `brdfkit umov` | On a coloured plastic the polarized part is the surface (white, Fresnel) and the rest the body: Umov's law over wavelength on one sample, and the surface reflection read out from under the body. [docs/UMOV.md](docs/UMOV.md) |
 | Predicting an unmeasured plastic | `brdfkit predict` | A coloured plastic as a black one (surface) plus r(λ) × a white one's body, from one spectrum of the target; scored on two held-out plastics: the colour transfers (m00 within 4–6 % up to θ_d 55°), the surface's strength does not. [docs/PREDICT.md](docs/PREDICT.md) |
+| The table as an ellipsometer | `brdfkit ellipso` | The phase Δ of the specular reflection is the part of a metal's polarization the tables get right; with the colour and the calibrated level it recognizes aluminium and steel among ten candidates, and leaves the fake gold unidentified (brass, TiN, gold and copper fit equally). [docs/ELLIPSO.md](docs/ELLIPSO.md) |
 | Corrected tables for Mitsuba 3 | `brdfkit to-mitsuba` | A measured table or a factor model as a `tensor_file` for `measured_polarized`, with the floor removed, the directions exchanged, and the light's cosine and the glass's g(θ_d) divided out; checked against Mitsuba 3. [docs/MITSUBA.md](docs/MITSUBA.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
@@ -65,12 +66,12 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss, quirks, slots, umov, clean, predict},
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss, quirks, slots, umov, clean, predict, ellipso},
                  color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            WALKTHROUGH.md (start here), QUIRKS.md, SLOTS.md, UMOV.md, PREDICT.md, MITSUBA.md, PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
+docs/            WALKTHROUGH.md (start here), QUIRKS.md, SLOTS.md, UMOV.md, PREDICT.md, ELLIPSO.md, MITSUBA.md, PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
 examples/        latent_demo.py: the whole chain from the downloaded data to rendered edits
 data/, out/      datasets and derived files; not tracked by git
 ```

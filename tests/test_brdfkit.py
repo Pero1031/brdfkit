@@ -32,6 +32,7 @@ from brdfkit.analysis import slots as SL                      # noqa: E402
 from brdfkit.analysis import clean as CL                      # noqa: E402
 from brdfkit.analysis import umov as UM                       # noqa: E402
 from brdfkit.analysis import predict as PR                    # noqa: E402
+from brdfkit.analysis import ellipso as EL                    # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -882,3 +883,38 @@ def test_predict():
     flat, _ = PR.predict(T['far'][30, :, 0, 0], W, B, G, tdd)                                     # without the width: the peak is half too low
     assert abs(PR.score(flat['interp'], T, tdd, lam)['core']['m00_factor'] - 2.0) < 0.2
     assert abs(PR.peak_factor(np.array([30.0]), 2.0, 1.5, 4.0, 1.5)[0] - 4.0) < 1e-12
+
+
+def test_ellipso():
+    """a synthetic metal: the phase read from the specular core is Fresnel's; n and k come back from the phase alone; among
+    candidates the metal itself ranks first with no film, by the phase and by phase + colour + level"""
+    K = lambda t: 0.5 * np.cos(t) ** 2 + 0.05
+    with tempfile.TemporaryDirectory() as d:
+        nk = os.path.join(d, 'metal.yml'); other = os.path.join(d, 'other.yml')
+        open(nk, 'w').write('DATA:\n  - type: tabulated nk\n    data: |\n        0.40 0.50 2.2\n        0.80 0.90 4.5\n')
+        open(other, 'w').write('DATA:\n  - type: tabulated nk\n    data: |\n        0.40 2.00 3.0\n        0.80 3.00 3.5\n')
+        metal = _fresnel_model(nk, K, width_deg=1.0)
+        glass = _fresnel_model(np.full(4, 1.5), K, width_deg=0.8)
+        p = os.path.join(d, 'red.npz'); QK.save(p, QK.reduce(FA.view(metal), log=None))
+        meas = EL.delta(QK.load(p))
+        lam = meas['channels']; met = LC.Metal(nk); eta = np.array([met.eta(l) for l in lam])
+        want = EL.model_delta(meas['theta_d'], eta, lam)
+        assert np.abs(EL._wrap(meas['delta'] - want)).max() < 0.05                     # degrees
+        assert np.all(meas['q'] <= 1 + 1e-6) and meas['q'].min() > 0.5
+        n, k, rms = EL.fit_nk(meas['theta_d'], meas['delta'])
+        assert np.allclose(n, eta.real, atol=0.02) and np.allclose(k, eta.imag, atol=0.02) and rms.max() < 0.05
+        pa = EL.principal_angle(meas['theta_d'], meas['delta'])
+        assert np.isfinite(pa).any() and np.all((pa[np.isfinite(pa)] > 55) & (pa[np.isfinite(pa)] < 75.5))
+        cands = {'metal': nk, 'other': other}
+        rank = EL.match(meas, cands, lam_range=(440.0, 760.0))
+        # by the phase alone another metal under a film comes within 3 deg: the degeneracy the colour and the level break
+        assert rank[0]['name'] == 'metal' and rank[0]['rms_film'] < 0.1 and rank[0]['film_nm'] < 1.0 and rank[1]['rms_film'] > 2
+        cal = CA.estimate(glass, 10, 0)
+        refl = EL.specular_reflectance(metal, cal)
+        assert np.allclose(EL.specular_reflectance(CA.apply(metal, cal), cal)['level'], refl['level'], rtol=1e-5)   # not divided twice
+        F = CA.metal_reflectance(np.radians(refl['theta_d']), lam, nk) @ FA.luminance_weights(lam)
+        assert np.allclose(refl['level'], F, rtol=0.03), np.abs(refl['level'] / F - 1).max()
+        ident = EL.identify(meas, refl, cands, lam_range=(440.0, 760.0))
+        assert ident[0]['name'] == 'metal' and ident[0]['combined'] < 0.05 and ident[1]['combined'] > 1
+        lines = []; EL.report('m', meas, rank, (n, k, rms), lines.append); EL.report_identify('m', refl, ident, lines.append)
+        assert len(lines) > 10
