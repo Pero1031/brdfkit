@@ -217,7 +217,9 @@ as labelled it is −0.13. The red rough plastic reads the same far enough from 
 holds the matrix of the geometry with light and camera exchanged: the tables are filed at φ_d + 180°. `--exchange` (in
 `compress`, `eval`, `factor`, `slots`, `to-mitsuba`) shifts them back. A specular reflection is the same either way, so the
 checks at the specular (3, 5, 7, 9) do not change; the polarization of a body, and the side of the cosine in 10, do.
-Details, the check and its limits in [SLOTS.md](SLOTS.md).
+The same check on the KAIST pBRDF 2020 billiard balls, from the same group's earlier instrument and in the same table
+layout, reads "as labelled" (the polarization follows the camera's angle, 0.99 against 0.00): the exchange belongs to the
+hpBRDF tables. Details, the check and its limits in [SLOTS.md](SLOTS.md).
 
 ## What to do with the tables
 

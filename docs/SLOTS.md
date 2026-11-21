@@ -68,6 +68,27 @@ left behind at θ_h ≥ 35°: polarizance explained by the "light" angle 0.97; o
 −0.22 as labelled, −0.26 mirrored. At θ_h ≥ 15° the surface reflection, which is s-polarized, still cancels part of it
 (+0.46, S2 term +0.99).
 
+## The earlier data set reads as labelled
+
+The KAIST pBRDF 2020 data set (Baek et al.) comes from the same group's earlier instrument, in the same table layout, and
+is read with the same plugin. Its billiard balls, a diffuse body under a polished surface, give the opposite answer:
+
+```bash
+python -m brdfkit slots data/kaist/pbrdf2020/white_billiard/2_white_billiard_pbrdf.mat --phi-step 3 --theta-d 10,80 --bands 400,700 --out out/slots/KAIST_white_billiard.npz
+```
+
+| | Polarizance explained by "light" / "camera" | Diattenuation explained by "light" / "camera" | Orientation as labelled (S2 term) | exchanged |
+|---|---|---|---|---|
+| KAIST 2020 white billiard, 450–650 nm | 0.00 / 0.99 | 1.00 / 0.00 | +0.89 (+0.98) | −0.07 (−0.48) |
+| KAIST 2020 red billiard, 600–650 nm | 0.01 / 0.98 | 1.00 / 0.00 | +0.86 (+0.98) | −0.09 (−0.44) |
+| hpBRDF white smooth plastic | 0.97 / 0.07 | 0.01 / 0.93 | −0.13 (−0.70) | +0.99 (+1.00) |
+
+In the 2020 tables the polarization of the outgoing light follows the camera's angle (0.015 at 20°–30°, 0.042 at 40°–50°,
+0.19 at 70°–80°, the same whatever the light's angle), and the first direction is the light, as the plugin takes it. So the
+check can come out either way on real data, and the exchange is a property of the hpBRDF tables, not of the plugin's
+convention, of this code, or of how such bodies polarize. The 2020 bodies also carry part of a one-sided cosine, on the
+light's side as labelled: m00 ∝ cos^0.42("light") cos^0.12("camera") for the white ball and cos^0.46, cos^−0.01 for the red.
+
 ## What it means
 
 The plugin's reference vectors only change sign when the two directions trade places (x_in(a, b) = −x_out(b, a), checked in
@@ -111,10 +132,12 @@ table.
 
 ## Limits
 
-- Decided on two samples, the white smooth and the red rough plastic; both give the same reading. The white rough plastic's
+- Decided on two hpBRDF samples, the white smooth and the red rough plastic; both give the same reading, and two samples of
+  the 2020 data set give the other one. hpBRDF's own white billiard ball was not checked. The white rough plastic's
   table was not kept. Metals and glass have no body and cannot be checked this way; their specular data do not depend on it.
 - The check assumes that a body polarizes like light leaving a dielectric. A table that does not is left undecided: the
-  KAIST pBRDF 2020 Spectralon target (sintered PTFE, no interface) gives 0.29 against 0.37 and no reading above 0.5.
+  KAIST pBRDF 2020 Spectralon target (sintered PTFE, no interface) gives 0.29 against 0.37 and no reading above 0.5,
+  where the billiard balls of the same data set are clear.
 - The sign of S3 (circular polarization) is not tested by a body, which produces none. A frame of the other handedness
   flips S2 and S3 together and S2 is settled, so S3 is taken to be right as stored.
 - A table stored as the transpose of its matrices at the labelled geometry would look the same on a reciprocal sample.
