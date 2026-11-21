@@ -5,7 +5,8 @@ The hpBRDF release (Moon et al., SIGGRAPH Asia 2025, arXiv 2509.13779) gives 14 
 them with other data should know where they depart from the reflectance of a physical surface. This page collects those
 departures for eight materials: aluminium, SUJ2 steel, fake gold, black glass, and four plastics (white smooth, white rough,
 red rough, black rough). All of them were measured the same way, by one command. Most of the departures appear on every material and come from the
-measurement or from how the tables were built; two belong to the samples.
+measurement or from how the tables were built; two belong to the samples. Three of them (5, 6 and 10) turn out to be one:
+the tables hold BRDF × cos(light) × g(θ_d), filed with the two directions exchanged (11).
 
 ```bash
 python -m brdfkit quirks data/kaist/hpbrdf/Black_glass.hpbrdf --out out/quirks/Black_glass.npz --dielectric
@@ -30,11 +31,12 @@ about 20° to 80° in 2.5° steps. The checks below use θ_d 20°–79°.
 | 3 | The peak is flat and the lobe widens with θ_d | Value at θ_h 0.28° / at 0: 0.97–0.99 on the smooth samples. These all have the same half width: 1.1° at θ_d 30°, 3.0° at 75° | The instrument's angular response | A lobe narrower than this is not resolved; `brdfkit gloss` builds on it |
 | 4 | An unpolarized floor far from the lobe | 0.007–0.010 at 550 nm on dark samples (it differs by about ±15 % between samples); 4–5 × that at 414 nm, 2 × at 950 nm; rises toward grazing | The instrument (an additive offset) | `brdfkit floor` ([FLOOR.md](FLOOR.md)) |
 | 5 | The specular lobe carries far too little energy | Lobe energy / Fresnel 0.22–0.36 at θ_d 30°, 0.03–0.10 at 75°, the same on metals, glass and plastic; a rough black plastic holds about a tenth | Unknown; specific to the surface reflection | `brdfkit calibrate` for specular materials, up to θ_d ≈ 50° ([CALIBRATION.md](CALIBRATION.md)) |
-| 6 | The diffuse body is dark, by another factor | White plastics, smooth and rough: directional albedo 0.21–0.26 from the table, at every incidence | Unknown | No correction in the data set; use the body in relative terms |
+| 6 | The diffuse body is dark, by the lobe's factor | White plastics, smooth and rough: directional albedo 0.21–0.26 from the table, at every incidence; 0.66–0.75 up to 55° once the light's cosine and the glass's g(θ_d) are divided out | The same g(θ_d) as the lobe (5), and the cosine of 10 | `brdfkit to-mitsuba --exchange --cosine light --calib` ([MITSUBA.md](MITSUBA.md)), up to ≈ 55° |
 | 7 | The specular spectrum varies irregularly along θ_d | 0.7 %–3.7 % per bin; far from the lobe only 0.1 %–0.3 % | Specific to the specular peak | Smooth S along θ_d or use a physical model ([FACTOR.md](FACTOR.md)) |
 | 8 | One-sided φ_d arms | Arm / its mirror image at θ_d 25°: SUJ2 7.0, aluminium 3.4, fake gold 3.3, black glass 2.3, red plastic 1.4; white and black plastics 1.1 (none) | The samples (polishing marks) | `--sym` in `factor` and `edit` ([LATENT_EDIT.md](LATENT_EDIT.md)) |
 | 9 | Metals' polarization disagrees with Fresnel; dielectrics' agrees | Diattenuation at θ_d 60°: aluminium 0.28 (Fresnel 0.06), SUJ2 0.02 (iron 0.44); five dielectrics within 0.07 (0.1 at 45°) | Metals only | Take N of a metal from its n, k (`brdfkit swap --nk`) |
-| 10 | The diffuse body is not symmetric in light and camera | White plastics: body ∝ cos^1.1–1.2 of the direction Mitsuba calls outgoing, cos^−0.3 of the other; the reciprocity break of the smooth samples equals the ratio of the two cosines | The paper fits M without the cos θ_i of the irradiance, which predicts a one-sided cosine (on the light's side, not the side found) | Keep it in mind when fitting a diffuse model |
+| 10 | The tables hold BRDF × the light's cosine | White plastics: body ∝ cos^1.1–1.2 of one direction, cos^−0.3 of the other; the reciprocity break of the smooth samples equals the ratio of the two cosines; the red rough plastic's body carries only cos^0.3 | The paper fits M without the cos θ_i of the irradiance; with 11 the cosine is on the light's side, as that predicts | `--cosine light` after `--exchange`, per sample (`brdfkit slots` prints the exponents) |
+| 11 | The two directions are exchanged | Diffuse bodies: the polarization of the outgoing light follows the angle the reader calls the light's (0.97 of the variance, 0.07 for the camera's), with the predicted orientation (+0.99) only when the directions are exchanged | How the tables were filed: every bin sits at φ_d + 180° | `--exchange` ([SLOTS.md](SLOTS.md)); the specular lobe is not affected |
 
 Smaller items: reciprocity (φ_d 0° against 180°) holds within 20 % at θ_d 25°–45° and is off by up to 57 % (either way) at
 θ_d ≥ 65°; the lobe energy fluctuates by 3 %–11 % from one θ_d bin to the next around a smooth trend.
@@ -108,21 +110,31 @@ tables, not to the samples. Up to θ_d ≈ 50° one correction K(θ_d), measured
 10 %–15 %; beyond 55° each material keeps its own error of 20 %–35 % ([CALIBRATION.md](CALIBRATION.md)).
 
 **The body.** The white plastics have a diffuse body under their specular lobe. From the table, by Monte Carlo over the
-hemisphere, the directional albedo (luminance) of the smooth one is (the rough one is within 0.03 of it, 0.21–0.25):
+hemisphere, the directional albedo (luminance) of the smooth one is (the rough one is within 0.03 of it up to 55°):
 
 | Incidence | 15° | 25° | 35° | 45° | 55° | 65° | 75° |
 |---|---|---|---|---|---|---|---|
 | As delivered | 0.22 | 0.23 | 0.23 | 0.24 | 0.25 | 0.26 | 0.26 |
-| Body only (θ_h ≥ 10°) | 0.17 | 0.18 | 0.20 | 0.22 | 0.23 | 0.25 | 0.24 |
-| Divided by the glass's K(θ_d) | 0.54 | 0.57 | 0.62 | 0.70 | 0.81 | 0.96 | 1.10 |
+| Floor removed | 0.20 | 0.20 | 0.20 | 0.21 | 0.22 | 0.24 | 0.23 |
+| Directions exchanged (11), divided by cos(light) (10) | 0.32 | 0.31 | 0.31 | 0.31 | 0.31 | 0.35 | 0.45 |
+| and by the glass's g(θ_d) | 0.68 | 0.68 | 0.69 | 0.71 | 0.75 | 0.87 | 1.15 |
 
-An ordinary white plastic reflects 0.7–0.9, so the body is probably 3 to 4 times too dark, the same on both white plastics. But it is dark by a nearly
-constant factor: dividing the whole table by the lobe's K(θ_d) over-corrects it, up to an albedo above 1 at 75°. At a fixed
-geometry (light and camera both 45° from the normal, θ_d set by the azimuth between them) the body changes by −17 % from
-θ_d 21° to 43°, where K changes by −43 %. So the strong θ_d dependence of K is specific to the specular peak, and
-`brdfkit calibrate` must not be applied to a material with a diffuse body. The data set has no diffuse reference (a
-Spectralon-like sample) that would calibrate the body, and the paper does not describe its radiometric calibration in enough
-detail to correct it (its supplementary document is not available).
+An ordinary white plastic reflects 0.7–0.9, so as delivered the body is 3 to 4 times too dark, the same on both white
+plastics. It is dark by the lobe's factor. At the specular the light's cosine is cos θ_d, so the lobe's error K(θ_d) is
+cos θ_d × g(θ_d); with the cosine divided out of the glass's table first, what is left is g: 0.50 at θ_d 20°, 0.44 at 30°,
+0.36 at 45°, 0.29 at 60°–70°, 0.32 at 75°. Dividing the white plastics' tables by the light's cosine and by that g, taken
+from the black glass's lobe and nothing else, brings their albedo to 0.66–0.75 at incidences up to 55°, flat within 0.07.
+Fitted on the body alone with a free factor per θ_d, that factor follows g within 3 % from θ_d 25° to 50°
+(1.05, 1.00, 0.88, 0.72 at 25°, 30°, 40°, 50° relative to 30°, against 1.07, 1.00, 0.88, 0.74 for g). So one factor per
+θ_d, which in this instrument is one factor per position of the light, scales the specular lobe and the diffuse body alike.
+
+Beyond 55° it over-corrects (0.87 at 65°, above 1 at 75°), as it does for the lobes of some materials
+([CALIBRATION.md](CALIBRATION.md)), and the corrected body still rises toward grazing (about cos^−0.2 of the light's angle
+and cos^−0.4 of the camera's), which a real body does not. Dividing the whole table by K(θ_d), which holds the cosine of
+the specular geometry, is wrong for a body: its light is not at θ_d. `brdfkit calibrate` and `edit --calib` on a factor
+model built without `--cosine` are therefore for specular materials only. The white plastics' true albedo is not known (the
+data set has no diffuse reference, and the paper's supplementary document, which describes the radiometric calibration, is
+not available), so 0.7 is plausible, not verified.
 
 ## 7. Spectrum along θ_d
 
@@ -183,19 +195,38 @@ divided by cos θ_d still falls from 0.50 at θ_d 20° to 0.2–0.3 at 60°–75
 The paper's own formulation points the same way. Its Mueller matrices are fitted per pixel so that the reflected Stokes
 vector equals M times the Stokes vector of the light as emitted by the illumination module (its Eqs. 2 and 5): there is no
 cos θ_i of the irradiance and no solid angle of the source, where a BRDF needs L_o = f E cos θ_i. Fitted that way, M is the
-BRDF times the cosine of the light's direction, times a constant. That is a one-sided cosine, but on the light's side,
-whereas the fit above finds it on the side the authors' Mitsuba plugin (`measured_polarized.cpp` in their repository, which
-reads the table as a plain BRDF and multiplies by the light's cosine) treats as the camera's. Either the tables' light and
-camera slots are exchanged relative to the plugin, or the factor has another source. The KAIST 2020 Spectralon, read the same
-way, has it on the light's side. The data and the paper cannot settle which; what the tables hold is a BRDF only up to a
-one-sided cosine and an unknown scale.
+BRDF times the cosine of the light's direction, times a constant. That is a one-sided cosine on the light's side, whereas
+the fit above finds it on the side the authors' Mitsuba plugin (`measured_polarized.cpp` in their repository, which reads the
+table as a plain BRDF and multiplies by the light's cosine) treats as the camera's. Section 11 resolves it: the tables' two
+directions are exchanged relative to the plugin, so the side found is the light's. The KAIST 2020 Spectralon, read the same
+way, has the cosine on the light's side as labelled.
+
+The cosine is not carried uniformly. The red rough plastic's body (620–720 nm) follows cos^0.2–0.3 of the light's angle
+only, and the rough plastics' lobes are nearly reciprocal as stored, so dividing by the light's cosine is right for the
+smooth samples' lobes and the white plastics' bodies and too much for those ([SLOTS.md](SLOTS.md)).
+
+## 11. The two directions are exchanged
+
+Light that comes out of a diffuse body through its surface is polarized by the angle it leaves at, in the plane of the exit
+direction and the normal; this is the first column of the Mueller matrix. On the white smooth plastic's body the magnitude
+of that column is a function of the angle the reader calls the light's (0.003 at 0°–10°, 0.047 at 40°–50°, 0.186 at
+70°–80°; that angle alone explains 0.97 of the variance, the "camera" angle 0.07), with the values of transmission out of a
+dielectric of the sample's index, and the first row does the opposite. The orientation of the column agrees with the
+prediction (+0.99, and +1.00 for its out-of-plane part) only if the two directions are exchanged and the frames are kept;
+as labelled it is −0.13. The red rough plastic reads the same far enough from its lobe (+0.98). So each bin of the tables
+holds the matrix of the geometry with light and camera exchanged: the tables are filed at φ_d + 180°. `--exchange` (in
+`compress`, `eval`, `factor`, `slots`, `to-mitsuba`) shifts them back. A specular reflection is the same either way, so the
+checks at the specular (3, 5, 7, 9) do not change; the polarization of a body, and the side of the cosine in 10, do.
+Details, the check and its limits in [SLOTS.md](SLOTS.md).
 
 ## What to do with the tables
 
 - Use θ_d 20°–80° only; outside it the tables are a fill.
 - Remove the floor before looking at anything dark: dark materials, the far field, the blue and infrared ends.
-- Do not read absolute reflectance from the tables. For specular materials, `calibrate` restores it up to θ_d ≈ 50°; for
-  materials with a diffuse body there is no correction in the data set.
+- Exchange the two directions (`--exchange`) before using the polarization of anything but the specular lobe.
+- Do not read absolute reflectance from the tables. Dividing by the light's cosine and by the glass's g(θ_d) restores it up
+  to about 50°–55°, for the specular lobe and for the white plastics' bodies ([MITSUBA.md](MITSUBA.md)); check the cosine
+  per sample.
 - Expect lobes no narrower than about 1° (θ_d 30°) to 3° (75°), whatever the surface.
 - Symmetrize over φ_d before widening or editing a lobe.
 - Smooth the specular spectrum along θ_d, or model it.
@@ -205,10 +236,11 @@ one-sided cosine and an unknown scale.
 
 Eight of the 14 materials were checked: three metals, black glass and four plastics. The two silicones, the billiard ball and
 the plum, silver and yellow rough plastics are not; the four plastics checked cover smooth against rough and a bright against
-a dark body. The causes of quirks 5, 6, 7, 9 and 10 are not known. The paper validates its polarimetry (air, a
+a dark body. Quirk 11 rests on two samples with a body (white smooth, red rough). The causes of quirks 7 and 9 are not
+known, nor is the origin of g(θ_d) in 5 and 6, nor why the cosine of 10 is weaker on the rough samples. The paper validates its polarimetry (air, a
 linear polarizer and a quarter-wave plate; 94.5 % of the Mueller matrices physically valid) and compares its white billiard
 ball qualitatively with Baek et al. 2020, but reports no check of the absolute scale. Its supplementary document, which
 describes the calibration, is not available (not on the authors' page, their GitHub repository, arXiv or the ACM Digital
 Library), so the corrections here are empirical: they rest on the samples' physics (Fresnel, a white body), not on the
 instrument's calibration. The white plastic's true albedo is not known either: "3 to 4
-times too dark" assumes an ordinary white plastic.
+times too dark", and "0.7 is plausible", assume an ordinary white plastic.

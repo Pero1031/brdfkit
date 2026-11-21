@@ -16,6 +16,12 @@ python -m brdfkit edit      out/factor/Aluminum_s0.npz --model out/merl_analysis
                             --calib out/calib/black_glass_cal.npz          # no shift: the cleaned, calibrated material
 ```
 
+This page is the calibration of a specular lobe, on factor models built without `--exchange` and `--cosine`. Its K(θ_d)
+holds the cosine of the light at the specular geometry and must not be applied to a diffuse body. Built with
+`--exchange --cosine light`, the same command gives the factor g(θ_d) = K / cos θ_d that scales lobes and bodies alike
+([QUIRKS.md](QUIRKS.md) sections 5–6, [MITSUBA.md](MITSUBA.md)); a calibration file is refused on a model built with other
+settings than its glass.
+
 `calibrate` writes the calibration (.npz), a report (.txt) and a figure (.png). `edit --calib` divides the lobe A by
 K(θ_d) before the symmetrization and the edit. `--calib-keep-level 30` corrects only the θ_d trend and keeps the level at
 θ_d = 30°. `examples/latent_demo.py --calib` does the same for the demo.

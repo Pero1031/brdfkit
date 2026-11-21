@@ -144,7 +144,8 @@ def fit(table: BRDFTable, measured_theta_d=(20.0, 80.0), smooth_deg=(0.0,), log=
         models.append(dict(kind=KIND, A=v['A'], S=v['S'], N=N_fit, phi_d=table.phi_d, theta_d=table.theta_d, theta_h=table.theta_h,
                            channels=table.channels, measured_theta_d=np.array(measured_theta_d, float), smooth_deg=v['smooth'],
                            errors=errors, meta=dict(source=str(table.meta.get('source', '')),
-                                                   floor_offset=table.meta.get('floor_offset'), floor_max_gain=table.meta.get('floor_max_gain'))))
+                                                   floor_offset=table.meta.get('floor_offset'), floor_max_gain=table.meta.get('floor_max_gain'),
+                                                   slots=table.meta.get('slots'), cosine_divided=table.meta.get('cosine_divided'))))
     return models
 
 
@@ -223,6 +224,11 @@ def view(model) -> BRDFTable:
         M[..., 0] = m00; M[..., 1:] = m00[..., None] * N[:, None]
         return M.reshape(m00.shape + (4, 4))
     meta = dict(source=f'factor model of {model["meta"].get("source", "")}', smooth_deg=float(model['smooth_deg']))
+    for k in ('floor_offset', 'slots', 'cosine_divided'):                         # corrections the model was fitted with
+        if model['meta'].get(k) is not None:
+            meta[k] = model['meta'][k]
+    if model['meta'].get('radiometric_calibration'):
+        meta['theta_d_calibration'] = str(model['meta']['radiometric_calibration'].get('source', ''))
     return BRDFTable(model['phi_d'], model['theta_d'], model['theta_h'], model['channels'], WAVELENGTH, True, meta, slice_fn=slice_fn)
 
 

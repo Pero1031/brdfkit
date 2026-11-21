@@ -61,24 +61,60 @@ def load(fn, in_memory=False) -> BRDFTable:
     return t
 
 
-def write(fn, M, phi_d, theta_d, theta_h, wvls):
-    """Write a table in the same format (the fields Mitsuba's measured_polarized plugin expects)."""
-    fields = {'M': np.ascontiguousarray(M, np.float32),
-              'phi_d': np.ascontiguousarray(np.reshape(phi_d, (1, -1)), np.float32),
-              'theta_d': np.ascontiguousarray(np.reshape(theta_d, (1, -1)), np.float32),
-              'theta_h': np.ascontiguousarray(np.reshape(theta_h, (1, -1)), np.float32),
-              'wvls': np.ascontiguousarray(np.ravel(wvls), np.uint16)}
-    header_len = 12 + 2 + 4 + sum(2 + len(k) + 2 + 1 + 8 + 8 * v.ndim for k, v in fields.items())
+def _write_header(f, spec):
+    """spec: {name: (dtype, shape)} in file order -> {name: byte offset}; leaves f at the end of the header"""
+    header_len = 12 + 2 + 4 + sum(2 + len(k) + 2 + 1 + 8 + 8 * len(shp) for k, (_, shp) in spec.items())
     off = (header_len + 7) // 8 * 8
     offsets = {}
-    for k, v in fields.items():
+    for k, (dt, shp) in spec.items():
         offsets[k] = off
-        off = (off + v.nbytes + 7) // 8 * 8
+        off = (off + np.dtype(dt).itemsize * int(np.prod(shp)) + 7) // 8 * 8
+    f.write(MAGIC); f.write(struct.pack('<BB', 1, 0)); f.write(struct.pack('<I', len(spec)))
+    for k, (dt, shp) in spec.items():
+        f.write(struct.pack('<H', len(k))); f.write(k.encode())
+        f.write(struct.pack('<H', len(shp))); f.write(struct.pack('<B', DTYPE_CODES[np.dtype(dt)]))
+        f.write(struct.pack('<Q', offsets[k])); f.write(struct.pack('<%dQ' % len(shp), *shp))
+    return offsets
+
+
+def _axes_fields(phi_d, theta_d, theta_h, wvls):
+    w = np.asarray(np.ravel(wvls), float)
+    if not np.allclose(w, np.round(w)) or w.min() < 0 or w.max() > 65535:
+        raise ValueError('wavelengths must be whole nanometres (the format stores them as uint16)')
+    return {'phi_d': np.ascontiguousarray(np.reshape(phi_d, (1, -1)), np.float32),
+            'theta_d': np.ascontiguousarray(np.reshape(theta_d, (1, -1)), np.float32),
+            'theta_h': np.ascontiguousarray(np.reshape(theta_h, (1, -1)), np.float32),
+            'wvls': np.ascontiguousarray(np.round(w), np.uint16)}
+
+
+def write(fn, M, phi_d, theta_d, theta_h, wvls):
+    """Write a table in the same format (the fields Mitsuba's measured_polarized plugin expects)."""
+    fields = {'M': np.ascontiguousarray(M, np.float32), **_axes_fields(phi_d, theta_d, theta_h, wvls)}
     with open(fn, 'wb') as f:
-        f.write(MAGIC); f.write(struct.pack('<BB', 1, 0)); f.write(struct.pack('<I', len(fields)))
-        for k, v in fields.items():
-            f.write(struct.pack('<H', len(k))); f.write(k.encode())
-            f.write(struct.pack('<H', v.ndim)); f.write(struct.pack('<B', DTYPE_CODES[v.dtype]))
-            f.write(struct.pack('<Q', offsets[k])); f.write(struct.pack('<%dQ' % v.ndim, *v.shape))
+        offsets = _write_header(f, {k: (v.dtype, v.shape) for k, v in fields.items()})
         for k, v in fields.items():
             f.write(b'\0' * (offsets[k] - f.tell())); f.write(v.tobytes())
+
+
+def write_table(fn, table: BRDFTable, phi_idx=None, ch_idx=None, log=None):
+    """Stream a polarized spectral BRDFTable (any view, e.g. a cleaned 13 GB table or a factor model) into a tensor_file,
+    one phi_d slice at a time. phi_idx / ch_idx: indices of the phi_d bins and channels to keep (default: all)."""
+    if not table.polarized or table.channel_kind != WAVELENGTH:
+        raise ValueError('the tensor_file format of measured_polarized needs a polarized spectral table')
+    phi_idx = np.arange(table.n_phi) if phi_idx is None else np.asarray(phi_idx, int)
+    ch_idx = np.arange(table.n_ch) if ch_idx is None else np.asarray(ch_idx, int)
+    axes = _axes_fields(table.phi_d[phi_idx], table.theta_d, table.theta_h, table.channels[ch_idx])
+    spec = {'M': (np.float32, (len(phi_idx), table.n_thd, table.n_thh, len(ch_idx), 4, 4)),
+            **{k: (v.dtype, v.shape) for k, v in axes.items()}}
+    all_ch = len(ch_idx) == table.n_ch and (ch_idx == np.arange(table.n_ch)).all()
+    with open(fn, 'wb') as f:
+        offsets = _write_header(f, spec)
+        f.write(b'\0' * (offsets['M'] - f.tell()))
+        for n, i in enumerate(phi_idx):
+            sl = table.slice(int(i))
+            f.write(np.ascontiguousarray(sl if all_ch else sl[:, :, ch_idx], '<f4').tobytes())
+            if log and n % 60 == 0:
+                log(f'  write {n}/{len(phi_idx)}')
+        for k, v in axes.items():
+            f.write(b'\0' * (offsets[k] - f.tell())); f.write(v.tobytes())
+    return fn

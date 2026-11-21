@@ -41,6 +41,18 @@ def rusinkiewicz(i, o):
     return pd, th, td
 
 
+def from_rusinkiewicz(phi_d, theta_d, theta_h):
+    """inverse of `rusinkiewicz` with the half vector at azimuth 0: (i, o) unit vectors, (N, 3) each (broadcast inputs)"""
+    pd, td, th = np.broadcast_arrays(np.asarray(phi_d, float), np.asarray(theta_d, float), np.asarray(theta_h, float))
+    pd, td, th = pd.ravel(), td.ravel(), th.ravel()
+    z = np.zeros_like(th)
+    h = np.stack([np.sin(th), z, np.cos(th)], -1)
+    t = np.stack([np.cos(th), z, -np.sin(th)], -1)
+    b = np.stack([z, z + 1.0, z], -1)
+    d = np.sin(td)[:, None] * (np.cos(pd)[:, None] * t + np.sin(pd)[:, None] * b)
+    return np.cos(td)[:, None] * h + d, np.cos(td)[:, None] * h - d
+
+
 def geometry(to_light, to_view):
     """-> dict(phi_d, theta_d, theta_h, x_in, x_out) for (N, 3) direction arrays"""
     to_light = np.asarray(to_light, float).reshape(-1, 3); to_view = np.asarray(to_view, float).reshape(-1, 3)

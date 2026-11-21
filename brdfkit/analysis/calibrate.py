@@ -147,7 +147,8 @@ def estimate(glass, cutoff_deg=10.0, smooth_deg=3.0, measured=None):
     return dict(kind=KIND, theta_d=td, K=K, K_raw=K_raw, Q=Q, F_Y=FY, n=n, n_rms=n_rms, channels=lam, spectral_error=E,
                 D_meas=D_meas, D_fresnel=D_f, R_meas=R_meas, R_fresnel=R_f, m02=Msp[..., 0, 2], cutoff_deg=float(cutoff_deg),
                 smooth_deg=float(smooth_deg), measured_theta_d=np.array(measured, float),
-                source=str(glass.get('meta', {}).get('source', '')))
+                source=str(glass.get('meta', {}).get('source', '')),
+                slots=str(glass.get('meta', {}).get('slots') or ''), cosine_divided=str(glass.get('meta', {}).get('cosine_divided') or ''))
 
 
 def save(path, calib):
@@ -163,6 +164,8 @@ def load(path):
     for k in ('cutoff_deg', 'smooth_deg'):
         c[k] = float(c[k])
     c['source'] = str(c['source'])
+    for k in ('slots', 'cosine_divided'):                         # files written before these settings existed: neither applied
+        c[k] = str(c[k]) if k in c else ''
     return c
 
 
@@ -173,7 +176,10 @@ def K_at(calib, theta_d):
 
 def apply(model, calib, keep_level_deg=None):
     """factor model with A divided by K(theta_d). keep_level_deg: rescale so that the level at that theta_d is unchanged
-    (corrects only the theta_d dependence, not the absolute scale)"""
+    (corrects only the theta_d dependence, not the absolute scale). The model must have been fitted with the exchange and
+    cosine settings of the glass model the calibration came from (analysis/clean.py)"""
+    from .clean import check_calibration
+    check_calibration(model.get('meta', {}), calib)
     K = K_at(calib, model['theta_d'])
     scale = 1.0 / K
     if keep_level_deg is not None:

@@ -28,6 +28,9 @@ from brdfkit.analysis import calibrate as CA                  # noqa: E402
 from brdfkit.analysis import swap as SW                       # noqa: E402
 from brdfkit.analysis import gloss as GL                      # noqa: E402
 from brdfkit.analysis import quirks as QK                     # noqa: E402
+from brdfkit.analysis import slots as SL                      # noqa: E402
+from brdfkit.analysis import clean as CL                      # noqa: E402
+from brdfkit.analysis import umov as UM                       # noqa: E402
 from brdfkit.io.merl import grid_axes as merl_grid_axes        # noqa: E402
 
 # real datasets (optional): data/kaist/hpbrdf/Aluminum.hpbrdf and the MERL .binary files in data/merl (or $BRDFKIT_MERL_DIR)
@@ -716,3 +719,123 @@ def test_quirks():
     assert round(a['phi']) == 30 and a['arm_over_mirror'] > 3.5, a
     assert abs(m['reciprocity_0_over_180'] - 1) < 1e-6
     return f"K at 45 deg {m['energy_over_fresnel'][45]:.4f} (true {K(td[45]):.4f}), arm x{a['arm_over_mirror']:.2f}"
+
+
+def _body_table(n_phi=73, n_thd=31, n_thh=31, n=1.5, cos_light=1.0):
+    """a diffuse body under a dielectric interface in the reader's frames: light is depolarized inside, so the Mueller matrix
+    is (polarizance of the exit, by the camera's angle) x (diattenuation of the entry, by the light's angle); m00 carries
+    cos(light)^cos_light, as a table fitted without the irradiance cosine does"""
+    def trans(c):
+        ci = np.clip(c, 1e-6, 1); ct = np.sqrt(1 - (1 - ci ** 2) / n ** 2)
+        ts = 1 - ((ci - n * ct) / (ci + n * ct)) ** 2; tp = 1 - ((n * ci - ct) / (n * ci + ct)) ** 2
+        return (tp - ts) / (tp + ts), 0.5 * (tp + ts)
+    phi = np.linspace(-np.pi, np.pi, n_phi); td = np.linspace(0, np.pi / 2, n_thd); th = np.linspace(0, np.pi / 2, n_thh)
+    TD, TH = np.meshgrid(td, th, indexing='ij')
+    vals = np.full((n_phi, n_thd, n_thh, 2, 4, 4), np.nan, np.float32)
+    for i, p in enumerate(phi):
+        pred, cl, cv = SL.predicted(p, TD, TH)
+        c1, c2, r1, r2 = pred['as labelled']
+        do, ao = trans(cv); di, ai = trans(cl)
+        col = np.stack([np.ones_like(c1), do * c1, do * c2, 0 * c1], -1); row = np.stack([np.ones_like(r1), di * r1, di * r2, 0 * r1], -1)
+        M = (ao * ai * 0.3 * np.clip(cl, 0, 1) ** cos_light)[:, None, None] * col[:, :, None] * row[:, None, :]
+        M = np.where(((cl > 0) & (cv > 0))[:, None, None], M, np.nan).reshape(TD.shape + (4, 4))
+        vals[i] = M[:, :, None]
+    return BRDFTable(phi, td, th, [550.0, 600.0], WAVELENGTH, True, {}, values=vals)
+
+
+def test_slots():
+    """Rusinkiewicz angles <-> directions; the reader's reference vectors only change sign when the directions trade places;
+    a synthetic body is read 'as labelled', its exchanged view 'exchanged' (not 'mirrored'), and the one-sided cosine of m00
+    follows the light"""
+    rng = np.random.default_rng(0)
+    a = G.normalize(rng.normal(size=(50, 3)) + [0, 0, 2]); b = G.normalize(rng.normal(size=(50, 3)) + [0, 0, 2])
+    g1, g2 = G.geometry(a, b), G.geometry(b, a)
+    assert np.allclose(g1['x_in'], -g2['x_out'], atol=1e-12) and np.allclose(g1['x_out'], -g2['x_in'], atol=1e-12)
+    assert np.allclose(g1['theta_d'], g2['theta_d']) and np.allclose(g1['theta_h'], g2['theta_h'])
+    assert np.allclose(np.abs(np.angle(np.exp(1j * (g1['phi_d'] - g2['phi_d'])))), np.pi, atol=1e-9)        # phi_d + 180 deg
+    i, o = G.from_rusinkiewicz(g1['phi_d'], g1['theta_d'], g1['theta_h'])
+    pd, th, td = G.rusinkiewicz(i, o)
+    assert np.allclose(np.exp(1j * pd), np.exp(1j * g1['phi_d']), atol=1e-9) and np.allclose(th, g1['theta_h']) and np.allclose(td, g1['theta_d'])
+    assert np.allclose(i[:, 2], a[:, 2]) and np.allclose(o[:, 2], b[:, 2])
+    t = _body_table()
+    kw = dict(phi_step=1, theta_h_min=0.0, theta_d_range=(0, 90), log=None)
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 's.npz'); SL.save(p, SL.reduce(t, **kw)); m = SL.measure(SL.load(p), min_count=20)
+    assert SL.verdict(m) == 'as labelled' and m['explained']['col']['camera'] > 0.99 and m['explained']['row']['light'] > 0.99
+    assert m['alignment']['as labelled']['col'] > 0.999 and m['alignment']['exchanged']['col'] < 0.6
+    assert m['cos_exponents']['light'] - m['cos_exponents']['camera'] > 0.9
+    for mirrored, name, other in ((False, 'exchanged', 'exchanged, mirrored'), (True, 'exchanged, mirrored', 'exchanged')):
+        mx = SL.measure(SL.reduce(CL.exchange(t, mirrored), **kw), min_count=20)
+        assert SL.verdict(mx) == name and mx['explained']['col']['light'] > 0.99
+        al = mx['alignment']
+        assert al[name]['col'] > 0.999 and al[name]['row'] > 0.999 and al[name]['col_s2'] > 0.999, al
+        assert al[other]['col_s2'] < -0.999 and al['as labelled']['col'] < 0.6, al
+        assert mx['cos_exponents']['camera'] - mx['cos_exponents']['light'] > 0.9
+    back = CL.exchange(CL.exchange(t))
+    assert np.array_equal(np.nan_to_num(back.slice(7)), np.nan_to_num(t.slice(7)))
+    return f"cos exponents light {m['cos_exponents']['light']:+.2f}, camera {m['cos_exponents']['camera']:+.2f}"
+
+
+def test_clean_and_write_table():
+    """dividing the light's cosine out makes the body's m00 symmetric in the two directions; g(theta_d) is divided out; a
+    calibration measured with other settings is refused; a view streams into a tensor_file that reads back the same"""
+    t = _body_table()
+    x = CL.clean(t, exchange_slots=True, cosine='camera', min_cos=1e-3)             # exchanged: the light sits in the camera slot
+    assert CL.settings(x.meta) == ('exchanged', 'camera')
+    j = 9; k = int(CL.opposite_phi(t.phi_d)[j])
+    a, b = x.slice(j)[..., 0, 0, 0], x.slice(k)[..., 0, 0, 0]
+    ok = np.isfinite(a) & np.isfinite(b)
+    assert ok.sum() > 300 and np.allclose(a[ok], b[ok], rtol=2e-4)                   # m00 now the same with light and camera exchanged
+    raw_a, raw_b = t.slice(j)[..., 0, 0, 0], t.slice(k)[..., 0, 0, 0]
+    assert not np.allclose(raw_a[ok], raw_b[ok], rtol=0.05)
+    try:
+        CL.divide_cosine(x, 'light'); raise AssertionError('a second cosine was accepted')
+    except ValueError:
+        pass
+    g = 0.5 + 0.4 * np.cos(t.theta_d)
+    y = CL.divide_theta_d(x, g)
+    assert np.allclose(np.nan_to_num(y.slice(j)), np.nan_to_num(x.slice(j) / g[:, None, None, None, None].astype(np.float32)), rtol=1e-6)
+    cal = dict(theta_d=t.theta_d, K=g, slots='', cosine_divided='', source='glass')
+    try:
+        CL.clean(t, exchange_slots=True, cosine='camera', calib=cal); raise AssertionError('a calibration with other settings was accepted')
+    except ValueError:
+        pass
+    z = CL.clean(t, exchange_slots=True, cosine='camera', calib=dict(cal, slots='exchanged', cosine_divided='camera'), min_cos=1e-3)
+    assert np.allclose(np.nan_to_num(z.slice(j)), np.nan_to_num(y.slice(j)), rtol=1e-6) and 'K(theta_d)' in CL.describe(z.meta)
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 'clean.pbsdf')
+        hpbrdf.write_table(p, z, phi_idx=np.arange(0, t.n_phi, 2), ch_idx=[1])
+        r = hpbrdf.load(p)
+        assert (r.n_phi, r.n_thd, r.n_thh, r.n_ch) == (37, 31, 31, 1) and r.channels[0] == 600
+        assert np.allclose(r.phi_d, t.phi_d[::2], atol=1e-6)
+        assert np.array_equal(np.nan_to_num(r.slice(3)), np.nan_to_num(z.slice(6)[:, :, [1]]))
+        fields = hpbrdf.parse_header(p)
+        assert fields['wvls'][0] == np.uint16 and fields['phi_d'][2] == (1, 37)
+
+
+def test_umov():
+    """synthetic reductions: a white polarized surface + a coloured depolarized body + a scaled floor; the split gives back the
+    floor's scale, the surface's Fresnel ratios, a depolarizing body and Umov's slope of -1"""
+    lam = np.arange(414.0, 951.0, 8.0); td = np.radians(np.arange(0, 91, 1.0)); nT = len(td)
+    c = 0.006 * (1 + 3 * ((lam - 600) / 250) ** 2)                                   # the floor's U-shaped spectrum
+    B = 0.04 / (1 + np.exp(-(lam - 600) / 8))                                        # a red body: black below 560 nm
+    D, C = UM.fresnel_ratios(td, 1.5)
+    surf = np.zeros((nT, 4, 4)); m11 = 0.002 * (1 + np.sin(td))
+    surf[:, 0, 0] = surf[:, 1, 1] = m11; surf[:, 0, 1] = surf[:, 1, 0] = D * m11; surf[:, 2, 2] = surf[:, 3, 3] = C * m11
+    e00 = np.zeros((4, 4)); e00[0, 0] = 1
+    body = e00.copy(); body[1, 0] = -0.05
+    k_true = 0.8
+    M = surf[:, None] + B[None, :, None, None] * body + (k_true * c)[None, :, None, None] * e00
+    Gm = np.broadcast_to(c[None, :, None, None] * e00, M.shape) + 1e-4 * np.eye(4)   # glass: floor + a little polarized light
+    n = np.full(nT, 10.0)
+    red = dict(channels=lam, theta_d=td, mid_M=M * 10, mid_n=n); ref = dict(channels=lam, theta_d=td, mid_M=Gm * 10, mid_n=n)
+    lam2, rows = UM.split(red, ref, dark_max=540.0)
+    assert len(rows) == 11
+    for r in rows:
+        t = int(round(r['theta_d'])); s = r['surf']
+        assert abs(r['k'] - k_true) < 1e-3 and abs(r['u']) < 1e-5, (r['k'], r['u'])
+        assert abs(s[0, 1] / s[1, 1] - D[t]) < 1e-3 and abs(s[2, 2] / s[1, 1] - C[t]) < 1e-3
+        assert abs(r['body'][1, 0] + 0.05) < 1e-3 and abs(r['body'][1, 1]) < 1e-3
+        assert abs(r['umov_slope'] + 1) < 0.02, r['umov_slope']
+    lines = []; UM.report('synthetic', lam2, rows, n=1.5, say=lines.append)
+    assert len(lines) > 20

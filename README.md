@@ -23,7 +23,10 @@ Research code. The code is MIT; each dataset has its own terms ([LICENSES.md](LI
 | Latent editing | `brdfkit edit`, `examples/latent_demo.py` | Move the grey lobe of a factor model along the MERL PCA, keeping the measured spectrum and polarization: materials that were never measured. The lobe is first symmetrized over φ_d, which removes a streak the measured tables carry. [docs/LATENT_EDIT.md](docs/LATENT_EDIT.md) |
 | Material swap | `brdfkit swap` | Keep the lobe shape of one material and take the colour (S), polarization (N) and reflectance of another, or of Fresnel from n, k: aluminium becomes gold, steel or black glass within 3% of the measured luminance and colour. [docs/SWAP.md](docs/SWAP.md) |
 | Gloss knob | `brdfkit gloss` | Roughen a lobe to a target width (half width, or GGX-equivalent roughness) by convolving its microfacet slopes: one physical parameter that means the same for every material, colour and polarization kept. The measured lobes are the instrument's response (black glass, 1.1°) convolved with the surface. [docs/GLOSS.md](docs/GLOSS.md) |
-| Quirks of a measured table | `brdfkit quirks` | One pass over a table, then the checks that matter before using it: inpainted angles, smoothing, the instrument's angular response, the floor, the radiometric scale against Fresnel, the spectrum along θ_d, one-sided φ_d arms, reciprocity, and the specular polarization against Fresnel. Results for eight hpBRDF materials in [docs/QUIRKS.md](docs/QUIRKS.md) |
+| Quirks of a measured table | `brdfkit quirks` | One pass over a table, then the checks that matter before using it: inpainted angles, smoothing, the instrument's angular response, the floor, the radiometric scale against Fresnel, the spectrum along θ_d, one-sided φ_d arms, reciprocity, and the specular polarization against Fresnel. Results for eight hpBRDF materials in [docs/QUIRKS.md](docs/QUIRKS.md): what the tables hold is BRDF × cos(light) × g(θ_d), filed at φ_d + 180°, plus a floor |
+| Which direction is the light | `brdfkit slots`, `--exchange` | The polarization of a diffuse body tells light from camera without a reference: the hpBRDF tables are filed at φ_d + 180° relative to the Mitsuba reader. [docs/SLOTS.md](docs/SLOTS.md) |
+| Surface and body by polarization | `brdfkit umov` | On a coloured plastic the polarized part is the surface (white, Fresnel) and the rest the body: Umov's law over wavelength on one sample, and the surface reflection read out from under the body. [docs/UMOV.md](docs/UMOV.md) |
+| Corrected tables for Mitsuba 3 | `brdfkit to-mitsuba` | A measured table or a factor model as a `tensor_file` for `measured_polarized`, with the floor removed, the directions exchanged, and the light's cosine and the glass's g(θ_d) divided out; checked against Mitsuba 3. [docs/MITSUBA.md](docs/MITSUBA.md) |
 | GoLD_rayt integration | [`integrations/gold_rayt/`](integrations/gold_rayt/) | `Material` implementation and integration steps |
 
 ## Usage
@@ -39,6 +42,7 @@ python -m brdfkit export   out/pca/Aluminum_pca.npz out/pca/Aluminum.hpbpca
 python -m brdfkit lu-chipman out/pca/Aluminum_pca.npz --refidx data/kaist/refidx/Al_Rakic.yml --out out/analysis
 python -m brdfkit merl-pca   data/merl --out out/merl_analysis/log
 python -m brdfkit merl-project data/kaist/hpbrdf/Aluminum.hpbrdf --model out/merl_analysis/log/merl_pca.npz --out out/hpbrdf_on_merl --reference data/merl/aluminium.binary
+python -m brdfkit to-mitsuba data/kaist/hpbrdf/Aluminum.hpbrdf out/clean/Aluminum.pbsdf --floor out/floor/Black_glass_floor.npz --exchange --cosine light --calib out/clean/black_glass_xc_cal.npz
 ```
 
 Datasets are not included (see [LICENSES.md](LICENSES.md)). The examples and the optional real-data tests expect
@@ -60,12 +64,12 @@ r = dec.eval(to_light, to_view, 550.0)          # m00 (f_r without the cosine te
 
 ```
 brdfkit/         package: table (common representation), io/ (loaders), geometry (Rusinkiewicz coordinates, Stokes bases),
-                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss, quirks},
+                 compress/pca, decode (reference decoder), export/hpbpca, analysis/{lu_chipman, merl_pca, merl_project, merl_subsets, floor, factor, latent_edit, calibrate, swap, gloss, quirks, slots, umov, clean},
                  color, cli
 cpp/             home of the C++ decoder (hpbrdf_pca.hpp) and a driver that checks it against Python
 integrations/    gold_rayt/: Material for GoLD_rayt, integration steps, build check
 tests/           self-checks on synthetic BRDFs (no pytest needed: python tests/run_tests.py)
-docs/            WALKTHROUGH.md (start here), QUIRKS.md, PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
+docs/            WALKTHROUGH.md (start here), QUIRKS.md, SLOTS.md, UMOV.md, MITSUBA.md, PCA.md, LU_CHIPMAN.md, MERL_PCA.md, HPBRDF_ON_MERL.md, FLOOR.md, FACTOR.md, LATENT_EDIT.md, CALIBRATION.md, SWAP.md, GLOSS.md
 examples/        latent_demo.py: the whole chain from the downloaded data to rendered edits
 data/, out/      datasets and derived files; not tracked by git
 ```
