@@ -27,6 +27,8 @@ from brdfkit.analysis import latent_edit as LE                 # noqa: E402
 from brdfkit.analysis import calibrate as CA                  # noqa: E402
 from brdfkit.analysis import swap as SW                       # noqa: E402
 from brdfkit.analysis import gloss as GL                      # noqa: E402
+from brdfkit.analysis import eyes as EY                       # noqa: E402
+from brdfkit.analysis import bounce as BO                     # noqa: E402
 from brdfkit.analysis import quirks as QK                     # noqa: E402
 from brdfkit.analysis import slots as SL                      # noqa: E402
 from brdfkit.analysis import clean as CL                      # noqa: E402
@@ -918,3 +920,69 @@ def test_ellipso():
         assert ident[0]['name'] == 'metal' and ident[0]['combined'] < 0.05 and ident[1]['combined'] > 1
         lines = []; EL.report('m', meas, rank, (n, k, rms), lines.append); EL.report_identify('m', refl, ident, lines.append)
         assert len(lines) > 10
+
+
+def test_eyes():
+    """synthetic reductions: a surface polarized along +q, a body polarized along -q with a yellow, a red or a white spectrum,
+    a floor. The polarization changes sign where the body takes over (yellow), stays with the surface on a black sample, with
+    the body on a white one; a red sample whose body is unpolarized only falls to zero; in the near infrared the colours go"""
+    lam = np.arange(414.0, 951.0, 8.0); td = np.radians(np.arange(0, 91, 1.0)); nT = len(td)
+    c = 0.006 * (1 + 3 * ((lam - 600) / 250) ** 2)
+    e00 = np.zeros((4, 4)); e00[0, 0] = 1
+    surf = np.zeros((4, 4)); surf[0, 0] = surf[1, 1] = 0.002; surf[1, 0] = surf[0, 1] = 0.0012
+    n = np.full(nT, 10.0)
+
+    def sample(B, body_q):
+        body = e00.copy(); body[1, 0] = body_q
+        M = surf[None, None] + B[None, :, None, None] * body + c[None, :, None, None] * e00
+        return dict(channels=lam, theta_d=td, mid_M=np.broadcast_to(M, (nT, len(lam), 4, 4)) * 10, mid_n=n)
+
+    edge = lambda l0: 0.06 / (1 + np.exp(-(lam - l0) / 8))                            # noqa: E731
+    glass = dict(channels=lam, theta_d=td, mid_M=np.broadcast_to(c[None, :, None, None] * e00 + 1e-5 * np.eye(4), (nT, len(lam), 4, 4)) * 10, mid_n=n)
+    reds = [sample(0 * lam, -0.05), sample(edge(560.0), -0.05), sample(edge(600.0), 0.0), sample(0.06 + 0 * lam, -0.05)]
+    sigs = [EY.signals(r, glass) for r in reds]
+    assert np.allclose(sigs[3]['R'], 0.062, atol=2e-5) and np.allclose(sigs[0]['q'], 0.0012)
+    x, first = EY.crossing(sigs[1])
+    # q = 0.0012 - 0.05 B changes sign where B = 0.024: 560 - 8 ln(1.5) = 556.8 nm
+    assert np.all(abs(x - 556.8) < 4) and np.all(first > 0), x
+    assert np.all(np.isnan(EY.crossing(sigs[0])[0])) and np.all(np.isnan(EY.crossing(sigs[2])[0])) and np.all(np.isnan(EY.crossing(sigs[3])[0]))
+    assert np.all(EY.crossing(sigs[3])[1] < 0)
+    bs = [EY.bands(s) for s in sigs]
+    nir, green = bs[0]['names'].index('NIR'), bs[0]['names'].index('green')
+    con = EY.contrast(bs[2], bs[3])                                                   # the red sample against the white one
+    assert con[0, green] < 0.05 and con[0, nir] > 0.99
+    pr = bs[2]['q'] / bs[2]['R']
+    assert pr[0, green] > 0.5 and pr[0, nir] < 0.03                                   # the red sample's polarization: strong in green, gone in the infrared
+    worst, pick = EY.best_band(bs)
+    assert worst.shape == (4, 4) and bs[0]['names'][pick[0]] == 'blue'
+    lines = []; EY.report(['black', 'yellow', 'red', 'white'], sigs, white=3, say=lines.append)
+    assert len(lines) > 30 and any('nm (surface below it)' in l for l in lines)
+
+
+def test_bounce():
+    """a flat spectrum is exact in RGB at any number of bounces; a steep edge drifts with the bounces; Delta E 2000 against a
+    published pair; the reflectance read from synthetic reductions"""
+    lam = np.arange(414.0, 781.0, 8.0)
+    # Sharma, Wu, Dalal (2005), pair 1: (50, 2.6772, -79.7751) against (50, 0, -82.7485) -> 2.0425
+    assert abs(BO.delta_e00(np.array([50.0, 2.6772, -79.7751]), np.array([50.0, 0.0, -82.7485])) - 2.0425) < 1e-3
+    L = BO.lights(lam)
+    from brdfkit.color import cmf
+    day, scr = L['daylight 6500 K'] @ cmf(lam), L['three-band screen'] @ cmf(lam)
+    assert np.allclose(day / day.sum(), scr / scr.sum(), atol=1e-6)                   # the screen is balanced to the daylight
+    grey = np.full(len(lam), 0.5); edge = 0.05 + 0.9 / (1 + np.exp(-(lam - 560) / 6))
+    for space in BO.SPACES:
+        for light in L.values():
+            r = BO.compare(lam, light, [grey] * 5, space)
+            assert r['dE00'] < 1e-6 and abs(r['Y_ratio'] - 1) < 1e-9 and abs(r['level'] - 0.5 ** 5) < 1e-9
+    d = [BO.compare(lam, L['daylight 6500 K'], [edge] * n)['dE00'] for n in (1, 2, 4)]
+    assert d[0] < 3 and d[1] > d[0] + 2 and d[2] > d[1] + 2, d
+    assert BO.compare(lam, L['incandescent 2856 K'], [edge])['dE00'] > 2 * d[0]      # another light: wrong from the first bounce
+    # reflectance from reductions: sample = half the white, both above the reference's floor
+    lam2 = np.arange(414.0, 951.0, 8.0); td = np.radians(np.arange(0, 91, 1.0)); nT = len(td)
+    c = 0.006 * (1 + 3 * ((lam2 - 600) / 250) ** 2); e00 = np.zeros((4, 4)); e00[0, 0] = 1
+    mk = lambda level: dict(channels=lam2, theta_d=td, mid_n=np.full(nT, 10.0),      # noqa: E731
+                            mid_M=np.broadcast_to((c + level)[None, :, None, None] * e00, (nT, len(lam2), 4, 4)) * 10)
+    lam3, rho = BO.reflectance(mk(0.03), mk(0.06), mk(0.0), white_albedo=0.7)
+    assert lam3.max() <= 780 and np.allclose(rho, 0.35, atol=1e-9)
+    lines = []; BO.report(['grey', 'edge'], lam, [grey, edge], say=lines.append)
+    assert len(lines) > 25

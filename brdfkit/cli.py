@@ -30,6 +30,10 @@ brdfkit command line.
                     (surface and body of a coloured dielectric split by polarization, on quirks reductions, docs/UMOV.md)
   brdfkit predict   TARGET_REDUCED.npz --white W.npz --black B.npz --glass G.npz [--read-theta-d 30] [--out REPORT.txt]
                     (a coloured plastic predicted from a black and a white one and a spectrum, scored against its table, docs/PREDICT.md)
+  brdfkit eyes      REDUCED.npz [REDUCED.npz ...] --reference GLASS_REDUCED.npz [--white WHITE_REDUCED.npz] [--out REPORT.txt]
+                    (what a near-infrared and a polarization camera see of diffuse materials, docs/EYES.md)
+  brdfkit bounce    REDUCED.npz [REDUCED.npz ...] --white WHITE_REDUCED.npz --reference GLASS_REDUCED.npz [--out REPORT.txt]
+                    (inter-reflection between the plastics: the spectral colour against the RGB product, docs/BOUNCE.md)
   brdfkit ellipso   REDUCED.npz --candidates NK.yml [NK.yml ...] [--factor MODEL.npz --calib CAL.npz] [--out REPORT.txt]
                     (phase of the specular reflection, pseudo n and k, ranking of candidate materials, docs/ELLIPSO.md)
   brdfkit slots     TABLE|REDUCED.npz --out REDUCED.npz [--bands 550,700] [--phi-step 6] [--theta-h-min 15] [--name NAME]
@@ -155,6 +159,17 @@ def main(argv=None):
     p.add_argument('--dark-max', type=float, default=540.0, help='the body is taken as black below this wavelength [nm]')
     p.add_argument('--region', choices=('mid', 'far'), default='mid'); p.add_argument('--n', type=float, default=None, help='index, for the Fresnel columns')
     p.add_argument('--out', default=None, help='report (.txt)'); p.add_argument('--name', default=None)
+    p = sub.add_parser('eyes', help='what a near-infrared and a polarization camera see off the specular, from quirks reductions')
+    p.add_argument('reduced', nargs='+', help='reductions (.npz) of `brdfkit quirks`'); p.add_argument('--reference', required=True,
+                   help='reduction of a dark sample (black glass): the floor')
+    p.add_argument('--white', default=None, help='reduction of a white sample: intensities are also given relative to it')
+    p.add_argument('--region', choices=('mid', 'far'), default='mid'); p.add_argument('--out', default=None, help='report (.txt)')
+    p = sub.add_parser('bounce', help='inter-reflection between diffuse materials, spectral against RGB, from quirks reductions')
+    p.add_argument('reduced', nargs='+', help='reductions (.npz) of `brdfkit quirks`'); p.add_argument('--white', required=True,
+                   help='reduction of a white sample: the reflectances are relative to it')
+    p.add_argument('--reference', required=True, help='reduction of a dark sample (black glass): the floor')
+    p.add_argument('--white-albedo', type=float, default=0.65, help='albedo given to the white sample')
+    p.add_argument('--out', default=None, help='report (.txt)')
     p = sub.add_parser('predict', help='predict a coloured plastic from a black and a white one and score it, on quirks reductions')
     p.add_argument('target', help='reduction (.npz) of `brdfkit quirks` of the plastic to predict (also the ground truth)')
     p.add_argument('--white', required=True); p.add_argument('--black', required=True); p.add_argument('--glass', required=True)
@@ -315,6 +330,25 @@ def main(argv=None):
             from .analysis import factor as F, calibrate as CA
             refl = EL.specular_reflectance(F.load(a.factor), CA.load(a.calib))
             EL.report_identify(name, refl, EL.identify(meas, refl, cands, n_film=a.n_film), say)
+        if a.out:
+            open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
+    elif a.cmd == 'eyes':
+        from .analysis import quirks as QK, eyes as EY
+        files = list(a.reduced) + ([a.white] if a.white and a.white not in a.reduced else [])
+        ref = QK.load(a.reference); names = [os.path.splitext(os.path.basename(f))[0] for f in files]
+        sigs = [EY.signals(QK.load(f), ref, a.region) for f in files]
+        lines = []
+        EY.report(names, sigs, white=files.index(a.white) if a.white else None, say=lambda s: (print(s), lines.append(s)))
+        if a.out:
+            open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
+    elif a.cmd == 'bounce':
+        from .analysis import quirks as QK, bounce as BO
+        ref, white = QK.load(a.reference), QK.load(a.white)
+        names = [os.path.splitext(os.path.basename(f))[0] for f in a.reduced]; rhos = []
+        for f in a.reduced:
+            lam, rho = BO.reflectance(QK.load(f), white, ref, a.white_albedo); rhos.append(rho)
+        lines = []
+        BO.report(names, lam, rhos, say=lambda s: (print(s), lines.append(s)))
         if a.out:
             open(a.out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n'); print('wrote', a.out)
     elif a.cmd == 'umov':
